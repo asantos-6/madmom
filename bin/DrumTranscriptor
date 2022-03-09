@@ -8,6 +8,7 @@ Drum transcription with a convolutional recurrent neural network (CRNN).
 from __future__ import absolute_import, division, print_function
 
 import argparse
+from datetime import datetime
 
 from madmom.features import ActivationsProcessor
 from madmom.features.drums import CRNNDrumProcessor, DrumPeakPickingProcessor
@@ -83,4 +84,6 @@ def main():
 
 
 if __name__ == '__main__':
+    i = datetime.now()
     main()
+    print('Running time: ', datetime.now() - i)
