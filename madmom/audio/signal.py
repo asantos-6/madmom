@@ -9,10 +9,11 @@ This module contains basic signal processing functionality.
 
 from __future__ import absolute_import, division, print_function
 
-import errno
+import warnings
 import numpy as np
 
-from madmom.processors import Processor, BufferProcessor
+from ..processors import BufferProcessor, Processor
+from ..utils import integer_types
 
 
 # signal functions
@@ -42,7 +43,7 @@ def smooth(signal, kernel):
     if kernel is None:
         return signal
     # size for the smoothing kernel is given
-    elif isinstance(kernel, (int, np.integer)):
+    elif isinstance(kernel, integer_types):
         if kernel == 0:
             return signal
         elif kernel > 1:
@@ -94,7 +95,7 @@ def adjust_gain(signal, gain):
     # convert the gain in dB to a scaling factor
     gain = np.power(np.sqrt(10.), 0.1 * gain)
     # prevent overflow and clipping
-    if gain > 1 and np.issubdtype(signal.dtype, np.int):
+    if gain > 1 and np.issubdtype(signal.dtype, np.integer):
         raise ValueError('positive gain adjustments are only supported for '
                          'float dtypes.')
     # Note: np.asanyarray returns the signal's ndarray subclass
@@ -155,7 +156,7 @@ def normalize(signal):
     """
     # scaling factor to be applied
     scaling = float(np.max(np.abs(signal)))
-    if np.issubdtype(signal.dtype, np.int):
+    if np.issubdtype(signal.dtype, np.integer):
         if signal.dtype in (np.int16, np.int32):
             scaling /= np.iinfo(signal.dtype).max
         else:
@@ -165,7 +166,7 @@ def normalize(signal):
     return np.asanyarray(signal / scaling, dtype=signal.dtype)
 
 
-def remix(signal, num_channels):
+def remix(signal, num_channels, channel=None):
     """
     Remix the signal to have the desired number of channels.
 
@@ -175,6 +176,9 @@ def remix(signal, num_channels):
         Signal to be remixed.
     num_channels : int
         Number of channels.
+    channel : int, optional
+        When reducing a signal to `num_channels` of 1, use this channel,
+        or 'None' to return the average across all channels.
 
     Returns
     -------
@@ -195,16 +199,19 @@ def remix(signal, num_channels):
     convert the dtype first.
 
     """
-    # convert to the desired number of channels
     if num_channels == signal.ndim or num_channels is None:
         # return as many channels as there are.
         return signal
     elif num_channels == 1 and signal.ndim > 1:
-        # down-mix to mono
-        # Note: to prevent clipping, the signal is converted to float first
-        #       and then converted back to the original dtype
-        # TODO: add weighted mixing
-        return np.mean(signal, axis=-1).astype(signal.dtype)
+        if channel is None:
+            # down-mix to mono
+            # Note: to prevent clipping, the signal is converted to float first
+            #       and then converted back to the original dtype
+            # TODO: add weighted mixing
+            return np.mean(signal, axis=-1).astype(signal.dtype)
+        else:
+            # Use the requested channel verbatim
+            return signal[:, channel]
     elif num_channels > 1 and signal.ndim == 1:
         # up-mix a mono signal simply by copying channels
         return np.tile(signal[:, np.newaxis], num_channels)
@@ -238,7 +245,7 @@ def resample(signal, sample_rate, **kwargs):
     This function uses ``ffmpeg`` to resample the signal.
 
     """
-    from .ffmpeg import load_ffmpeg_file
+    from ..io.audio import load_ffmpeg_file
     # is the given signal a Signal?
     if not isinstance(signal, Signal):
         raise ValueError('only Signals can resampled, not %s' % type(signal))
@@ -273,17 +280,15 @@ def rescale(signal, dtype=np.float32):
 
     """
     # allow only float dtypes
-    if not np.issubdtype(dtype, np.float):
+    if not np.issubdtype(dtype, np.floating):
         raise ValueError('only float dtypes are supported, not %s.' % dtype)
     # float signals don't need rescaling
-    if np.issubdtype(signal.dtype, np.float):
+    if np.issubdtype(signal.dtype, np.floating):
         return signal.astype(dtype)
-    elif np.issubdtype(signal.dtype, np.int):
+    elif np.issubdtype(signal.dtype, np.integer):
         return signal.astype(dtype) / np.iinfo(signal.dtype).max
     else:
-        # TODO: not sure if this can happen or not. Either add the
-        #       functionality if it is supposed to work or add a test
-        raise ValueError('unsupported signal dtypes: %s.' % signal.dtype)
+        raise ValueError('unsupported signal dtype: %s.' % signal.dtype)
 
 
 def trim(signal, where='fb'):
@@ -353,8 +358,8 @@ def energy(signal):
     if np.iscomplex(signal).any():
         signal = np.abs(signal)
     # Note: type conversion needed because of integer overflows
-    if signal.dtype != np.float:
-        signal = signal.astype(np.float)
+    if signal.dtype != float:
+        signal = signal.astype(float)
     # return energy
     return np.dot(signal.flatten(), signal.flatten())
 
@@ -435,213 +440,61 @@ def sound_pressure_level(signal, p_ref=None):
 # functions to load / write audio files
 class LoadAudioFileError(Exception):
     """
-    Exception to be raised whenever an audio file could not be loaded.
+    Deprecated as of version 0.16. Please use
+    madmom.io.audio.LoadAudioFileError instead. Will be removed in version
+    0.18.
 
     """
     # pylint: disable=super-init-not-called
 
     def __init__(self, value=None):
+        warnings.warn(LoadAudioFileError.__doc__)
         if value is None:
             value = 'Could not load audio file.'
         self.value = value
 
-    def __str__(self):
-        return repr(self.value)
 
-
-def load_wave_file(filename, sample_rate=None, num_channels=None, start=None,
-                   stop=None, dtype=None):
+def load_wave_file(*args, **kwargs):
     """
-    Load the audio data from the given file and return it as a numpy array.
-
-    Only supports wave files, does not support re-sampling or arbitrary
-    channel number conversions. Reads the data as a memory-mapped file with
-    copy-on-write semantics to defer I/O costs until needed.
-
-    Parameters
-    ----------
-    filename : str
-        Name of the file.
-    sample_rate : int, optional
-        Desired sample rate of the signal [Hz], or 'None' to return the
-        signal in its original rate.
-    num_channels : int, optional
-        Reduce or expand the signal to `num_channels` channels, or 'None'
-        to return the signal with its original channels.
-    start : float, optional
-        Start position [seconds].
-    stop : float, optional
-        Stop position [seconds].
-    dtype : numpy data type, optional
-        The data is returned with the given dtype. If 'None', it is returned
-        with its original dtype, otherwise the signal gets rescaled. Integer
-        dtypes use the complete value range, float dtypes the range [-1, +1].
-
-
-    Returns
-    -------
-    signal : numpy array
-        Audio signal.
-    sample_rate : int
-        Sample rate of the signal [Hz].
-
-    Notes
-    -----
-    The `start` and `stop` positions are rounded to the closest sample; the
-    sample corresponding to the `stop` value is not returned, thus consecutive
-    segment starting with the previous `stop` can be concatenated to obtain
-    the original signal without gaps or overlaps.
+    Deprecated as of version 0.16. Please use madmom.io.audio.load_wave_file
+    instead. Will be removed in version 0.18.
 
     """
-    from scipy.io import wavfile
-    file_sample_rate, signal = wavfile.read(filename, mmap=True)
-    # if the sample rate is not the desired one, raise exception
-    if sample_rate is not None and sample_rate != file_sample_rate:
-        raise ValueError('Requested sample rate of %f Hz, but got %f Hz and '
-                         're-sampling is not implemented.' %
-                         (sample_rate, file_sample_rate))
-    # same for the data type
-    if dtype is not None and signal.dtype != dtype:
-        raise ValueError('Requested dtype %s, but got %s and re-scaling is '
-                         'not implemented.' % (dtype, signal.dtype))
-    # only request the desired part of the signal
-    if start is not None:
-        start = int(start * file_sample_rate)
-    if stop is not None:
-        stop = min(len(signal), int(stop * file_sample_rate))
-    if start is not None or stop is not None:
-        signal = signal[start: stop]
-    # up-/down-mix if needed
-    if num_channels is not None:
-        signal = remix(signal, num_channels)
-    # return the signal
-    return signal, file_sample_rate
+    warnings.warn('Deprecated as of version 0.16. Please use madmom.io.audio.'
+                  'load_wave_file instead. Will be removed in version 0.18.')
+    from ..io.audio import load_wave_file
+    return load_wave_file(*args, **kwargs)
 
 
-def write_wave_file(signal, filename, sample_rate=None):
+def write_wave_file(*args, **kwargs):
     """
-    Write the signal to disk as a .wav file.
-
-    Parameters
-    ----------
-    signal : numpy array or Signal
-        The signal to be written to file.
-    filename : str
-        Name of the file.
-    sample_rate : int, optional
-        Sample rate of the signal [Hz].
-
-    Returns
-    -------
-    filename : str
-        Name of the file.
-
-    Notes
-    -----
-    `sample_rate` can be 'None' if `signal` is a :class:`Signal` instance. If
-    set, the given `sample_rate` is used instead of the signal's sample rate.
-    Must be given if `signal` is a ndarray.
+    Deprecated as of version 0.16. Please use madmom.io.audio.write_wave_file
+    instead. Will be removed in version 0.18.
 
     """
-    from scipy.io import wavfile
-    if isinstance(signal, Signal) and sample_rate is None:
-        sample_rate = int(signal.sample_rate)
-    wavfile.write(filename, rate=sample_rate, data=signal)
-    return filename
+    warnings.warn('Deprecated as of version 0.16. Please use madmom.io.audio.'
+                  'write_wave_file instead. Will be removed in version 0.18.')
+    from ..io.audio import write_wave_file
+    return write_wave_file(*args, **kwargs)
 
 
 # function for automatically determining how to open audio files
-def load_audio_file(filename, sample_rate=None, num_channels=None, start=None,
-                    stop=None, dtype=None):
+def load_audio_file(*args, **kwargs):
     """
-    Load the audio data from the given file and return it as a numpy array.
-    This tries load_wave_file() load_ffmpeg_file() (for ffmpeg and avconv).
-
-    Parameters
-    ----------
-    filename : str or file handle
-        Name of the file or file handle.
-    sample_rate : int, optional
-        Desired sample rate of the signal [Hz], or 'None' to return the
-        signal in its original rate.
-    num_channels: int, optional
-        Reduce or expand the signal to `num_channels` channels, or 'None'
-        to return the signal with its original channels.
-    start : float, optional
-        Start position [seconds].
-    stop : float, optional
-        Stop position [seconds].
-    dtype : numpy data type, optional
-        The data is returned with the given dtype. If 'None', it is returned
-        with its original dtype, otherwise the signal gets rescaled. Integer
-        dtypes use the complete value range, float dtypes the range [-1, +1].
-
-    Returns
-    -------
-    signal : numpy array
-        Audio signal.
-    sample_rate : int
-        Sample rate of the signal [Hz].
-
-    Notes
-    -----
-    For wave files, the `start` and `stop` positions are rounded to the closest
-    sample; the sample corresponding to the `stop` value is not returned, thus
-    consecutive segment starting with the previous `stop` can be concatenated
-    to obtain the original signal without gaps or overlaps.
-    For all other audio files, this can not be guaranteed.
+    Deprecated as of version 0.16. Please use madmom.io.audio.load_audio_file
+    instead. Will be removed in version 0.18.
 
     """
-    from subprocess import CalledProcessError
-    from .ffmpeg import load_ffmpeg_file
-
-    # determine the name of the file if it is a file handle
-    try:
-        # close the file handle if it is open
-        filename.close()
-        # use the file name
-        filename = filename.name
-    except AttributeError:
-        pass
-    # try reading as a wave file
-    error = "All attempts to load audio file %r failed." % filename
-    try:
-        return load_wave_file(filename, sample_rate=sample_rate,
-                              num_channels=num_channels, start=start,
-                              stop=stop, dtype=dtype)
-    except ValueError:
-        pass
-    # not a wave file (or other sample rate requested), try ffmpeg
-    try:
-        return load_ffmpeg_file(filename, sample_rate=sample_rate,
-                                num_channels=num_channels, start=start,
-                                stop=stop, dtype=dtype)
-    except OSError as e:
-        # if it's not a file not found error, raise it!
-        if e.errno != errno.ENOENT:
-            raise
-
-        # ffmpeg is not present, try avconv
-        try:
-            return load_ffmpeg_file(filename, sample_rate=sample_rate,
-                                    num_channels=num_channels, start=start,
-                                    stop=stop, dtype=dtype,
-                                    cmd_decode='avconv', cmd_probe='avprobe')
-        except OSError as e:
-            if e.errno == errno.ENOENT:
-                error += " Try installing ffmpeg (or avconv on Ubuntu Linux)."
-            else:
-                raise
-        except CalledProcessError:
-            pass
-    except CalledProcessError:
-        pass
-    raise LoadAudioFileError(error)
+    warnings.warn('Deprecated as of version 0.16. Please use madmom.io.audio.'
+                  'load_audio_file instead. Will be removed in version 0.18.')
+    from ..io.audio import load_audio_file
+    return load_audio_file(*args, **kwargs)
 
 
 # signal classes
 SAMPLE_RATE = None
 NUM_CHANNELS = None
+CHANNEL = None
 START = None
 STOP = None
 NORM = False
@@ -664,6 +517,9 @@ class Signal(np.ndarray):
     num_channels : int, optional
         Reduce or expand the signal to `num_channels` channels, or 'None'
         to return the signal with its original channels.
+    channel : int, optional
+        When reducing a signal to `num_channels` of 1, use this channel,
+        or 'None' to return the average across all channels.
     start : float, optional
         Start position [seconds].
     stop : float, optional
@@ -735,14 +591,15 @@ class Signal(np.ndarray):
     # pylint: disable=attribute-defined-outside-init
 
     def __init__(self, data, sample_rate=SAMPLE_RATE,
-                 num_channels=NUM_CHANNELS, start=START, stop=STOP, norm=NORM,
-                 gain=GAIN, dtype=DTYPE, **kwargs):
+                 num_channels=NUM_CHANNELS, channel=CHANNEL, start=START,
+                 stop=STOP, norm=NORM, gain=GAIN, dtype=DTYPE, **kwargs):
         # this method is for documentation purposes only
         pass
 
     def __new__(cls, data, sample_rate=SAMPLE_RATE, num_channels=NUM_CHANNELS,
-                start=START, stop=STOP, norm=NORM, gain=GAIN, dtype=DTYPE,
-                **kwargs):
+                channel=CHANNEL, start=START, stop=STOP, norm=NORM, gain=GAIN,
+                dtype=DTYPE, **kwargs):
+        from ..io.audio import load_audio_file
         # try to load an audio file if the data is not a numpy array
         if not isinstance(data, np.ndarray):
             data, sample_rate = load_audio_file(data, sample_rate=sample_rate,
@@ -753,6 +610,9 @@ class Signal(np.ndarray):
         if not isinstance(data, Signal):
             data = np.asarray(data).view(cls)
             data.sample_rate = sample_rate
+        # remix to desired number of channels
+        if num_channels:
+            data = remix(data, num_channels, channel)
         # normalize signal if needed
         if norm:
             data = normalize(data)
@@ -778,6 +638,22 @@ class Signal(np.ndarray):
         self.start = getattr(obj, 'start', None)
         self.stop = getattr(obj, 'stop', None)
 
+    def __reduce__(self):
+        # Get the parent's __reduce__ tuple
+        state = super(Signal, self).__reduce__()
+        # Create our own tuple to pass to __setstate__, but append the
+        # __dict__ rather than individual members
+        new_state = state[2] + (self.__dict__,)
+        # Return a tuple that replaces the parent's __setstate__ tuple with
+        # our own
+        return state[0], state[1], new_state
+
+    def __setstate__(self, state):
+        # Update the internal dict from state
+        self.__dict__.update(state[-1])
+        # Call the parent's __setstate__ with the other tuple elements
+        super(Signal, self).__setstate__(state[:-1])
+
     @property
     def num_samples(self):
         """Number of samples."""
@@ -786,12 +662,11 @@ class Signal(np.ndarray):
     @property
     def num_channels(self):
         """Number of channels."""
+        # mono file
         if self.ndim == 1:
-            # mono file
             return 1
-        else:
-            # multi channel file
-            return np.shape(self)[1]
+        # multi channel file
+        return np.shape(self)[1]
 
     @property
     def length(self):
@@ -881,7 +756,8 @@ class SignalProcessor(Processor):
     """
 
     def __init__(self, sample_rate=SAMPLE_RATE, num_channels=NUM_CHANNELS,
-                 start=START, stop=STOP, norm=NORM, gain=GAIN, **kwargs):
+                 start=START, stop=STOP, norm=NORM, gain=GAIN, dtype=DTYPE,
+                 **kwargs):
         # pylint: disable=unused-argument
         self.sample_rate = sample_rate
         self.num_channels = num_channels
@@ -889,6 +765,7 @@ class SignalProcessor(Processor):
         self.stop = stop
         self.norm = norm
         self.gain = gain
+        self.dtype = dtype
 
     def process(self, data, **kwargs):
         """
@@ -911,7 +788,8 @@ class SignalProcessor(Processor):
         # update arguments passed to FramedSignal
         args = dict(sample_rate=self.sample_rate,
                     num_channels=self.num_channels, start=self.start,
-                    stop=self.stop, norm=self.norm, gain=self.gain)
+                    stop=self.stop, norm=self.norm, gain=self.gain,
+                    dtype=self.dtype)
         args.update(kwargs)
         # instantiate a Signal and return it
         return Signal(data, **args)
@@ -955,13 +833,11 @@ class SignalProcessor(Processor):
         g = parser.add_argument_group('signal processing arguments')
         if sample_rate is not None:
             g.add_argument('--sample_rate', action='store', type=int,
-                           default=sample_rate,
-                           help='re-sample the signal to this sample rate '
-                                '[Hz]')
+                           default=sample_rate, help='re-sample the signal to '
+                                                     'this sample rate [Hz]')
         if mono is not None:
             g.add_argument('--mono', dest='num_channels', action='store_const',
-                           const=1,
-                           help='down-mix the signal to mono')
+                           const=1, help='down-mix the signal to mono')
         if start is not None:
             g.add_argument('--start', action='store', type=float,
                            help='start position of the signal [seconds]')
@@ -980,7 +856,7 @@ class SignalProcessor(Processor):
 
 
 # functions for splitting a signal into frames
-def signal_frame(signal, index, frame_size, hop_size, origin=0):
+def signal_frame(signal, index, frame_size, hop_size, origin=0, pad=0):
     """
     This function returns frame at `index` of the `signal`.
 
@@ -996,6 +872,10 @@ def signal_frame(signal, index, frame_size, hop_size, origin=0):
         Hop size in samples between adjacent frames.
     origin : int
         Location of the window center relative to the signal position.
+    pad : int, float or str, optional
+        Pad parts of the frame not covered by the signal with this value.
+        The literal 'repeat' can be used to indicate that the first/last value
+        should be repeated.
 
     Returns
     -------
@@ -1038,38 +918,47 @@ def signal_frame(signal, index, frame_size, hop_size, origin=0):
     start = ref_sample - frame_size // 2 - int(origin)
     stop = start + frame_size
     # return the requested portion of the signal
+    # Note: use NumPy's advanced indexing (i.e. trailing comma) in order to
+    #       avoid a memory leak (issue #321). This returns a copy of the data,
+    #       however, returning a simple copy of the relevant portion of the
+    #       signal also leaks memory
+    # Update: removing this hack again, since it seems that it is not needed
+    #         any more with recent NumPy versions
+    if start >= 0 and stop <= num_samples:
+        # normal read operation, return appropriate section
+        return signal[start:stop]
+
+    # part of the frame falls outside the signal, padding needed
     # Note: np.pad(signal[from: to], (pad_left, pad_right), mode='constant')
     #       always returns a ndarray, not the subclass (and is slower);
     #       usually np.zeros_like(signal[:frame_size]) is exactly what we want
     #       (i.e. zeros of frame_size length and the same type/class as the
     #       signal and not just the dtype), but since we have no guarantee that
     #       the signal is that long, we have to use the np.repeat workaround
-    # Note: use NumPy's advanced indexing (i.e. trailing comma) in order to
-    #       avoid a memory leak (issue #321). This returns a copy of the data,
-    #       however, returning a simple copy of the relevant portion of the
-    #       signal also leaks memory
-    if (stop < 0) or (start > num_samples):
-        # window falls completely outside the actual signal, return just zeros
-        frame = np.repeat(signal[:1] * 0, frame_size, axis=0)
-        return frame
-    elif (start < 0) and (stop > num_samples):
-        # window surrounds the actual signal, position signal accordingly
-        frame = np.repeat(signal[:1] * 0, frame_size, axis=0)
-        frame[-start:num_samples - start] = signal
-        return frame
-    elif start < 0:
-        # window crosses left edge of actual signal, pad zeros from left
-        frame = np.repeat(signal[:1] * 0, frame_size, axis=0)
-        frame[-start:] = signal[:stop, ]
-        return frame
-    elif stop > num_samples:
-        # window crosses right edge of actual signal, pad zeros from right
-        frame = np.repeat(signal[:1] * 0, frame_size, axis=0)
-        frame[:num_samples - start] = signal[start:, ]
-        return frame
-    else:
-        # normal read operation
-        return signal[start:stop, ]
+    frame = np.repeat(signal[:1], frame_size, axis=0)
+
+    # determine how many samples need to be padded from left/right
+    left, right = 0, 0
+    if start < 0:
+        left = min(stop, 0) - start
+        # repeat beginning of signal
+        frame[:left] = np.repeat(signal[:1], left, axis=0)
+        if pad != 'repeat':
+            frame[:left] = pad
+        start = 0
+    if stop > num_samples:
+        right = stop - max(start, num_samples)
+        # repeat end of signal
+        frame[-right:] = np.repeat(signal[-1:], right, axis=0)
+        if pad != 'repeat':
+            frame[-right:] = pad
+        stop = num_samples
+
+    # position signal inside frame
+    frame[left:frame_size - right] = signal[min(start, num_samples):
+                                            max(stop, 0)]
+    # return the frame
+    return frame
 
 
 FRAME_SIZE = 2048
@@ -1276,7 +1165,7 @@ class FramedSignal(object):
 
         """
         # a single index is given
-        if isinstance(index, int):
+        if isinstance(index, integer_types):
             # negative indices
             if index < 0:
                 index += self.num_frames
@@ -1380,9 +1269,6 @@ class FramedSignalProcessor(Processor):
         End of signal handling (see :class:`FramedSignal`).
     num_frames : int, optional
         Number of frames to return.
-    kwargs : dict, optional
-        If no :class:`Signal` instance was given, one is instantiated with
-        these additional keyword arguments.
 
     Notes
     -----
@@ -1479,14 +1365,14 @@ class FramedSignalProcessor(Processor):
         # add signal framing options to the existing parser
         g = parser.add_argument_group('signal framing arguments')
         # depending on the type of frame_size, use different options
-        if isinstance(frame_size, int):
+        if isinstance(frame_size, integer_types):
             g.add_argument('--frame_size', action='store', type=int,
                            default=frame_size,
                            help='frame size [samples, default=%(default)i]')
         elif isinstance(frame_size, list):
-            # Note: this option is used for e.g. stacking multiple spectrograms
+            # Note: this option can be used to stack multiple spectrograms
             #       with different frame sizes
-            from madmom.utils import OverrideDefaultListAction
+            from ..utils import OverrideDefaultListAction
             g.add_argument('--frame_size', type=int, default=frame_size,
                            action=OverrideDefaultListAction, sep=',',
                            help='(comma separated list of) frame size(s) to '
@@ -1526,6 +1412,8 @@ class Stream(object):
     fps : float, optional
         Use given frames per second; if set, this computes and overwrites the
         given `hop_size` value (the resulting `hop_size` must be an integer).
+    stream_input_device : int, optional
+        PyAudio device index of the desired input device.
     queue_size : int
         Size of the FIFO (first in first out) queue. If the queue is full and
         new audio samples arrive, the oldest item in the queue will be dropped.
@@ -1539,12 +1427,12 @@ class Stream(object):
 
     def __init__(self, sample_rate=SAMPLE_RATE, num_channels=NUM_CHANNELS,
                  dtype=np.float32, frame_size=FRAME_SIZE, hop_size=HOP_SIZE,
-                 fps=FPS, **kwargs):
+                 fps=FPS, stream_input_device=None, **kwargs):
         # import PyAudio here and not at the module level
         import pyaudio
         # set attributes
         self.sample_rate = sample_rate
-        self.num_channels = 1 if None else num_channels
+        self.num_channels = 1 if num_channels is None else num_channels
         self.dtype = dtype
         if frame_size:
             self.frame_size = int(frame_size)
@@ -1555,6 +1443,7 @@ class Stream(object):
             raise ValueError(
                 'only integer `hop_size` supported, not %s' % hop_size)
         self.hop_size = int(hop_size)
+        self.stream_input_device = stream_input_device
         # init PyAudio
         self.pa = pyaudio.PyAudio()
         # init a stream to read audio samples from
@@ -1562,6 +1451,7 @@ class Stream(object):
                                    channels=self.num_channels,
                                    format=pyaudio.paFloat32, input=True,
                                    frames_per_buffer=self.hop_size,
+                                   input_device_index=self.stream_input_device,
                                    start=True)
         # create a buffer
         self.buffer = BufferProcessor(self.frame_size)

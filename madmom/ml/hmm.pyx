@@ -66,7 +66,7 @@ class TransitionModel(object):
     >>> tm  # doctest: +ELLIPSIS
     <madmom.ml.hmm.TransitionModel object at 0x...>
 
-    TransitionModel.from_dense will check if the supplied probabilties for
+    TransitionModel.from_dense will check if the supplied probabilities for
     each state sum to 1 (and thus represent a correct probability distribution)
 
     >>> tm = TransitionModel.from_dense([0, 1], [1, 0], [0.5, 1.0])
@@ -97,6 +97,52 @@ class TransitionModel(object):
     def log_probabilities(self):
         """Transition log probabilities."""
         return np.log(self.probabilities)
+
+    @staticmethod
+    def make_dense(states, pointers, probabilities):
+        """
+        Return a dense representation of sparse transitions.
+
+        Parameters
+        ----------
+        states : numpy array
+            All states transitioning to state s are returned in:
+            states[pointers[s]:pointers[s+1]]
+        pointers : numpy array
+            Pointers for the `states` array for state s.
+        probabilities : numpy array
+            The corresponding transition are returned in:
+            probabilities[pointers[s]:pointers[s+1]].
+
+        Returns
+        -------
+        states : numpy array, shape (num_transitions,)
+            Array with states (i.e. destination states).
+        prev_states : numpy array, shape (num_transitions,)
+            Array with previous states (i.e. origination states).
+        probabilities : numpy array, shape (num_transitions,)
+            Transition probabilities.
+
+        See Also
+        --------
+        :class:`TransitionModel`
+
+        Notes
+        -----
+        Three 1D numpy arrays of same length must be given. The indices
+        correspond to each other, i.e. the first entry of all three arrays
+        define the transition from the state defined prev_states[0] to that
+        defined in states[0] with the probability defined in probabilities[0].
+
+        """
+        from scipy.sparse import csr_matrix
+        # convert everything into a sparse CSR matrix
+        transitions = csr_matrix((np.array(probabilities),
+                                  np.array(states), np.array(pointers)))
+        # convert to correct types
+        states, prev_states = transitions.nonzero()
+        # return them
+        return states, prev_states, probabilities
 
     @staticmethod
     def make_sparse(states, prev_states, probabilities):
@@ -142,7 +188,7 @@ class TransitionModel(object):
         # check for a proper probability distribution, i.e. the emission
         # probabilities of each prev_state must sum to 1
         states = np.asarray(states)
-        prev_states = np.asarray(prev_states, dtype=np.int)
+        prev_states = np.asarray(prev_states, dtype=int)
         probabilities = np.asarray(probabilities)
         if not np.allclose(np.bincount(prev_states, weights=probabilities), 1):
             raise ValueError('Not a probability distribution.')
@@ -155,7 +201,7 @@ class TransitionModel(object):
         # convert to correct types
         states = transitions.indices.astype(np.uint32)
         pointers = transitions.indptr.astype(np.uint32)
-        probabilities = transitions.data.astype(dtype=np.float)
+        probabilities = transitions.data.astype(dtype=float)
         # return them
         return states, pointers, probabilities
 
@@ -393,7 +439,7 @@ class HiddenMarkovModel(object):
         self.observation_model = observation_model
         if initial_distribution is None:
             initial_distribution = np.ones(transition_model.num_states,
-                                           dtype=np.float) / \
+                                           dtype=float) / \
                                    transition_model.num_states
         if not np.allclose(initial_distribution.sum(), 1):
             raise ValueError('Initial distribution is not a probability '
@@ -403,7 +449,7 @@ class HiddenMarkovModel(object):
         self._prev = self.initial_distribution.copy()
 
     def __getstate__(self):
-        # copy everything to a pickleable object
+        # copy everything to a picklable object
         state = self.__dict__.copy()
         # do not pickle attributes needed for stateful processing
         state.pop('_prev', None)
@@ -463,7 +509,7 @@ class HiddenMarkovModel(object):
 
         # current viterbi variables
         cdef double [::1] current_viterbi = np.empty(num_states,
-                                                     dtype=np.float)
+                                                     dtype=float)
 
         # previous viterbi variables, init with the initial state distribution
         cdef double [::1] previous_viterbi = np.log(self.initial_distribution)
@@ -552,7 +598,7 @@ class HiddenMarkovModel(object):
         observations : numpy array, shape (num_frames, num_densities)
             Observations to compute the forward variables for.
         reset : bool, optional
-            Reset the HMM to its inital state before computing the forward
+            Reset the HMM to its initial state before computing the forward
             variables.
 
         Returns
@@ -581,7 +627,7 @@ class HiddenMarkovModel(object):
         # forward variables
         cdef double[::1] fwd_prev = self._prev
         cdef double[:, ::1] fwd = np.zeros((num_observations, num_states),
-                                           dtype=np.float)
+                                           dtype=float)
 
         # define counters etc.
         cdef unsigned int prev_pointer, frame, state
@@ -652,7 +698,7 @@ class HiddenMarkovModel(object):
         cdef double [:, ::1] om_densities
 
         # forward variables
-        cdef double[::1] fwd_cur = np.zeros(num_states, dtype=np.float)
+        cdef double[::1] fwd_cur = np.zeros(num_states, dtype=float)
         cdef double[::1] fwd_prev = self.initial_distribution.copy()
 
         # define counters etc.

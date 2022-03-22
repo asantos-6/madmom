@@ -12,7 +12,6 @@ from __future__ import absolute_import, division, print_function
 
 import numpy as np
 
-from . import layers, activations
 from ...processors import Processor, ParallelProcessor, SequentialProcessor
 
 
@@ -30,16 +29,34 @@ def average_predictions(predictions):
     numpy array
         Averaged prediction.
 
+    Notes
+    -----
+    If `predictions` is a list of tuples (the output of a multi-task network),
+    the tuple's elements are averaged separately, i.e. the first elements, all
+    second elements and so on.
+
     """
-    # average predictions if needed
-    if len(predictions) > 1:
-        # average the predictions
-        predictions = sum(predictions) / len(predictions)
+    # predictions has length 1, thus there's nothing to average
+    if len(predictions) == 1:
+        return predictions[0]
+
+    def avg(pred):
+        """Average predictions."""
+        return sum(pred) / len(pred)
+
+    # average predictions
+    # if the network is a multi-task network, it returns tuples
+    if isinstance(predictions[0], tuple):
+        # FIXME: checking for tuples may be a bit fragile
+        avg_pred = []
+        # average the tuple's elements one by one
+        for pred in list(zip(*predictions)):
+            avg_pred.append(avg(pred))
+        return tuple(avg_pred)
+    # normal network
     else:
-        # nothing to average since we have only one prediction
-        predictions = predictions[0]
-    # return the (averaged) predictions
-    return predictions
+        # average predictions
+        return avg(predictions)
 
 
 class NeuralNetwork(Processor):
@@ -68,7 +85,7 @@ class NeuralNetwork(Processor):
     <madmom.ml.nn.NeuralNetwork object at 0x...>
     >>> nn(np.array([[0], [0.5], [1], [0], [1], [2], [0]]))
     ... # doctest: +NORMALIZE_WHITESPACE
-    array([ 0.53305, 0.36903, 0.265 , 0.53305, 0.265 , 0.18612, 0.53305])
+    array([0.53305, 0.36903, 0.265 , 0.53305, 0.265 , 0.18612, 0.53305])
 
     """
 
@@ -93,16 +110,18 @@ class NeuralNetwork(Processor):
 
         """
         # make data at least 2d (required by NN-layers)
-        if data.ndim < 2:
+        if isinstance(data, np.ndarray) and data.ndim < 2:
             data = np.array(data, subok=True, copy=False, ndmin=2)
         # loop over all layers
         for layer in self.layers:
             # activate the layer and feed the output into the next one
-            data = layer.activate(data, reset=reset)
-        # ravel the predictions if needed
-        if data.ndim == 2 and data.shape[1] == 1:
-            data = data.ravel()
-        return data
+            data = layer(data, reset=reset)
+        # squeeze predictions to contain only true dimensions
+        try:
+            return data.squeeze()
+        except AttributeError:
+            # multi-task networks have multiple outputs and return lists
+            return tuple([d.squeeze() for d in data])
 
     def reset(self):
         """
@@ -143,7 +162,7 @@ class NeuralNetworkEnsemble(SequentialProcessor):
     <madmom.ml.nn.NeuralNetworkEnsemble object at 0x...>
     >>> nn(np.array([[0], [0.5], [1], [0], [1], [2], [0]]))
     ... # doctest: +NORMALIZE_WHITESPACE
-    array([ 0.00116, 0.00213, 0.01428, 0.00729, 0.0088 , 0.21965, 0.00532])
+    array([0.00116, 0.00213, 0.01428, 0.00729, 0.0088 , 0.21965, 0.00532])
 
     """
 
@@ -157,6 +176,7 @@ class NeuralNetworkEnsemble(SequentialProcessor):
     @classmethod
     def load(cls, nn_files, **kwargs):
         """
+        Instantiate a new Neural Network ensemble from a list of files.
 
         Parameters
         ----------

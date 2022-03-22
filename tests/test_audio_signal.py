@@ -8,15 +8,14 @@ This file contains tests for the madmom.audio.signal module.
 from __future__ import absolute_import, division, print_function
 
 import os
+import sys
 import tempfile
 import unittest
 from os.path import join as pj
-import sys
 
-from . import AUDIO_PATH, DATA_PATH
-from .test_audio_comb_filters import sig_1d, sig_2d
 from madmom.audio.signal import *
-
+from . import AUDIO_PATH
+from .test_audio_comb_filters import sig_1d, sig_2d
 
 sample_file = pj(AUDIO_PATH, 'sample.wav')
 sample_file_22k = pj(AUDIO_PATH, 'sample_22050.wav')
@@ -120,10 +119,10 @@ class TestAdjustGainFunction(unittest.TestCase):
         self.assertTrue(result.shape == sig_2d.shape)
         self.assertTrue(result.dtype == sig_2d.dtype)
         # same with int dtype
-        result = adjust_gain(sig_2d.astype(np.int), 0)
+        result = adjust_gain(sig_2d.astype(int), 0)
         self.assertTrue(len(result) == len(sig_2d))
         self.assertTrue(result.shape == sig_2d.shape)
-        self.assertTrue(result.dtype == np.int)
+        self.assertTrue(result.dtype == int)
 
     def test_values(self):
         # mono signals
@@ -134,9 +133,9 @@ class TestAdjustGainFunction(unittest.TestCase):
         result = adjust_gain(sig_1d, 10)
         self.assertTrue(np.allclose(result, 3.1622777 * sig_1d))
         # same with int dtype
-        result = adjust_gain(sig_1d.astype(np.int), 0)
-        self.assertTrue(np.allclose(result, sig_1d.astype(np.int)))
-        result = adjust_gain(sig_1d.astype(np.int), -5)
+        result = adjust_gain(sig_1d.astype(int), 0)
+        self.assertTrue(np.allclose(result, sig_1d.astype(int)))
+        result = adjust_gain(sig_1d.astype(int), -5)
         self.assertTrue(np.allclose(result, 0 * sig_1d))
         # multi-channel signals
         result = adjust_gain(sig_2d, 0)
@@ -181,10 +180,10 @@ class TestAttenuateFunction(unittest.TestCase):
         self.assertTrue(result.shape == sig_2d.shape)
         self.assertTrue(result.dtype == sig_2d.dtype)
         # same as int dtype
-        result = attenuate(sig_2d.astype(np.int), 0)
+        result = attenuate(sig_2d.astype(int), 0)
         self.assertTrue(len(result) == len(sig_2d))
         self.assertTrue(result.shape == sig_2d.shape)
-        self.assertTrue(result.dtype == np.int)
+        self.assertTrue(result.dtype == int)
 
     def test_values(self):
         # mono signals
@@ -195,9 +194,9 @@ class TestAttenuateFunction(unittest.TestCase):
         result = attenuate(sig_1d, -10)
         self.assertTrue(np.allclose(result, 3.1622777 * sig_1d))
         # same with int dtype
-        result = attenuate(sig_1d.astype(np.int), 0)
-        self.assertTrue(np.allclose(result, sig_1d.astype(np.int)))
-        result = attenuate(sig_1d.astype(np.int), 5)
+        result = attenuate(sig_1d.astype(int), 0)
+        self.assertTrue(np.allclose(result, sig_1d.astype(int)))
+        result = attenuate(sig_1d.astype(int), 5)
         self.assertTrue(np.allclose(result, 0 * sig_1d))
         # multi-channel signals
         result = attenuate(sig_2d, 0)
@@ -277,7 +276,7 @@ class TestNormalizeFunction(unittest.TestCase):
 
 class TestMixFunction(unittest.TestCase):
 
-    mono_2d = np.asarray([0.5, 0, 1, 0, 0.5, 0.5, 0.5, 0, 1], dtype=np.float)
+    mono_2d = np.asarray([0.5, 0, 1, 0, 0.5, 0.5, 0.5, 0, 1], dtype=float)
 
     def test_types(self):
         # mono signals
@@ -294,14 +293,14 @@ class TestMixFunction(unittest.TestCase):
         self.assertTrue(result.shape == (len(sig_1d), 3))
         self.assertTrue(result.dtype == sig_1d.dtype)
         # same as int dtype
-        result = remix(sig_1d.astype(np.int), 1)
+        result = remix(sig_1d.astype(int), 1)
         self.assertTrue(len(result) == len(sig_1d))
         self.assertTrue(result.shape == sig_1d.shape)
-        self.assertTrue(result.dtype == np.int)
-        result = remix(sig_1d.astype(np.int), 2)
+        self.assertTrue(result.dtype == int)
+        result = remix(sig_1d.astype(int), 2)
         self.assertTrue(len(result) == len(sig_1d))
         self.assertTrue(result.shape == (len(sig_1d), 2))
-        self.assertTrue(result.dtype == np.int)
+        self.assertTrue(result.dtype == int)
         # from file
         signal = Signal(sample_file)
         result = remix(signal, 1)
@@ -330,27 +329,34 @@ class TestMixFunction(unittest.TestCase):
         with self.assertRaises(NotImplementedError):
             remix(sig_2d, 3)
         # same as int dtype
-        result = remix(sig_2d.astype(np.int), 1)
+        result = remix(sig_2d.astype(int), 1)
         self.assertTrue(len(result) == len(sig_2d))
         self.assertTrue(result.shape == sig_1d.shape)
-        self.assertTrue(result.dtype == np.int)
-        result = remix(sig_2d.astype(np.int), 2)
+        self.assertTrue(result.dtype == int)
+        result = remix(sig_2d.astype(int), 2)
         self.assertTrue(len(result) == len(sig_2d))
         self.assertTrue(result.shape == sig_2d.shape)
-        self.assertTrue(result.dtype == np.int)
+        self.assertTrue(result.dtype == int)
+
+    def test_channel_selection(self):
+        result = remix(sig_2d, 1, channel=0)
+        self.assertEqual(result.shape, sig_1d.shape)
+        self.assertTrue(np.array_equal(result, sig_1d))
+        result = remix(sig_2d, 1, channel=1)
+        self.assertTrue(np.array_equal(result, sig_2d[:, 1]), 0)
 
     def test_values(self):
         # mono signals
         result = remix(sig_1d, 1)
         self.assertTrue(np.allclose(result, sig_1d))
         # same as int dtype
-        result = remix(sig_2d.astype(np.int), 1)
-        self.assertTrue(np.allclose(result, self.mono_2d.astype(np.int)))
+        result = remix(sig_2d.astype(int), 1)
+        self.assertTrue(np.allclose(result, self.mono_2d.astype(int)))
         # multi-channel signals
         result = remix(sig_2d, 1)
         self.assertTrue(np.allclose(result, self.mono_2d))
         # same as int dtype
-        result = remix(2 * sig_2d.astype(np.int), 1)
+        result = remix(2 * sig_2d.astype(int), 1)
         self.assertTrue(np.allclose(result, 2 * self.mono_2d))
 
 
@@ -442,10 +448,10 @@ class TestRescaleFunction(unittest.TestCase):
 
     def test_types(self):
         # mono signals
-        result = rescale(sig_1d, np.float)
+        result = rescale(sig_1d, float)
         self.assertTrue(len(result) == len(sig_1d))
         self.assertTrue(result.shape == sig_1d.shape)
-        self.assertTrue(result.dtype == np.float)
+        self.assertTrue(result.dtype == float)
         # from file
         signal = Signal(sample_file)
         result = rescale(signal)
@@ -459,20 +465,22 @@ class TestRescaleFunction(unittest.TestCase):
         self.assertTrue(result.dtype == np.float16)
         # from file
         signal = Signal(stereo_sample_file)
-        result = rescale(signal, np.float)
+        result = rescale(signal, float)
         self.assertTrue(isinstance(result, Signal))
         self.assertTrue(isinstance(result, np.ndarray))
-        self.assertTrue(result.dtype == np.float)
+        self.assertTrue(result.dtype == float)
 
     def test_errors(self):
         with self.assertRaises(ValueError):
-            rescale(sig_2d, np.complex)
+            rescale(sig_2d, complex)
         with self.assertRaises(ValueError):
-            rescale(sig_2d, np.int)
+            rescale(sig_2d, int)
+        with self.assertRaises(ValueError):
+            rescale(np.ones(10, dtype=complex))
 
     def test_values(self):
         # mono signals
-        result = rescale(sig_1d, np.float)
+        result = rescale(sig_1d, float)
         self.assertTrue(np.allclose(result, sig_1d))
         # from file
         signal = Signal(sample_file)
@@ -485,7 +493,7 @@ class TestRescaleFunction(unittest.TestCase):
         self.assertTrue(np.allclose(result, sig_2d))
         # from file
         signal = Signal(stereo_sample_file)
-        result = rescale(signal, np.float)
+        result = rescale(signal, float)
         self.assertTrue(np.allclose(result[:6], [[0.00100711, 0.0011597],
                                                  [0.00106815, 0.00109867],
                                                  [0.00088504, 0.00103763],
@@ -540,6 +548,9 @@ class TestTrimFunction(unittest.TestCase):
         self.assertTrue(result.shape == (4, 2))
         self.assertTrue(np.allclose(result[:, 0], np.arange(1, 5)))
         self.assertTrue(np.allclose(result[:, 1], np.arange(1, 5)))
+        # zeros at the end
+        result = trim(np.arange(5, 0, -1))
+        self.assertTrue(np.allclose(result, [5, 4, 3, 2, 1]))
 
 
 class TestEnergyFunction(unittest.TestCase):
@@ -551,6 +562,10 @@ class TestEnergyFunction(unittest.TestCase):
         # multi-channel signals
         result = energy(sig_2d)
         self.assertIsInstance(result, float)
+
+    def test_errors(self):
+        with self.assertRaises(TypeError):
+            energy(None)
 
     def test_values(self):
         # mono signals
@@ -642,7 +657,7 @@ class TestSoundPressureLevelFunction(unittest.TestCase):
         # maximum int16 amplitude, alternating between -1 and 1
         sinus_int16 = (sinus * np.iinfo(np.int16).max).astype(np.int16)
         result = sound_pressure_level(sinus_int16)
-        self.assertTrue(np.allclose(result, 0.))
+        self.assertTrue(np.allclose(result, 0., atol=1e-3))
 
         # multi-channel signals
         result = sound_pressure_level(sig_2d)
@@ -657,7 +672,7 @@ class TestSoundPressureLevelFunction(unittest.TestCase):
         # maximum int16 amplitude, alternating between -1 and 1
         sig = remix(sinus_int16, 2)
         result = sound_pressure_level(sig)
-        self.assertTrue(np.allclose(result, 0.))
+        self.assertTrue(np.allclose(result, 0., atol=1e-3))
 
     def test_frames(self):
         # mono signals
@@ -677,255 +692,6 @@ class TestSoundPressureLevelFunction(unittest.TestCase):
         self.assertTrue(np.allclose(result, -np.finfo(float).max))
 
 
-class TestLoadWaveFileFunction(unittest.TestCase):
-
-    def test_types(self):
-        signal, sample_rate = load_wave_file(sample_file)
-        self.assertIsInstance(signal, np.ndarray)
-        self.assertTrue(signal.dtype == np.int16)
-        self.assertTrue(type(sample_rate) == int)
-
-    def test_file_handle(self):
-        # open file handle
-        file_handle = open(sample_file, 'rb')
-        signal, sample_rate = load_wave_file(file_handle)
-        self.assertIsInstance(signal, np.ndarray)
-        self.assertTrue(signal.dtype == np.int16)
-        self.assertTrue(type(sample_rate) == int)
-
-    def test_values(self):
-        # test wave loader
-        signal, sample_rate = load_wave_file(sample_file)
-        self.assertTrue(np.allclose(signal[:5],
-                                    [-2494, -2510, -2484, -2678, -2833]))
-        self.assertTrue(len(signal) == 123481)
-        self.assertTrue(sample_rate == 44100)
-        self.assertTrue(signal.shape == (123481,))
-        # stereo
-        signal, sample_rate = load_wave_file(stereo_sample_file)
-        self.assertTrue(np.allclose(signal[:4],
-                                    [[33, 38], [35, 36], [29, 34], [36, 31]]))
-        self.assertTrue(len(signal) == 182919)
-        self.assertTrue(sample_rate == 44100)
-        self.assertTrue(signal.shape == (182919, 2))
-
-    def test_start_stop(self):
-        # test wave loader
-        signal, sample_rate = load_wave_file(sample_file, start=1. / 44100,
-                                             stop=5. / 44100)
-        self.assertTrue(np.allclose(signal, [-2510, -2484, -2678, -2833]))
-        self.assertTrue(len(signal) == 4)
-        self.assertTrue(sample_rate == 44100)
-
-    def test_downmix(self):
-        # test wave loader
-        signal, sample_rate = load_wave_file(stereo_sample_file,
-                                             num_channels=1)
-        self.assertTrue(np.allclose(signal[:5], [35, 35, 31, 33, 33]))
-
-        self.assertTrue(len(signal) == 182919)
-        self.assertTrue(sample_rate == 44100)
-        self.assertTrue(signal.shape == (182919, ))
-
-    def test_upmix(self):
-        signal, sample_rate = load_wave_file(sample_file, num_channels=2)
-        self.assertTrue(np.allclose(signal[:5],
-                                    [[-2494, -2494], [-2510, -2510],
-                                     [-2484, -2484], [-2678, -2678],
-                                     [-2833, -2833]]))
-        self.assertTrue(len(signal) == 123481)
-        self.assertTrue(sample_rate == 44100)
-        self.assertTrue(signal.shape == (123481, 2))
-
-    def test_errors(self):
-        # resampling of wav not supported
-        with self.assertRaises(ValueError):
-            load_wave_file(sample_file, sample_rate=22050)
-        # resampling of wav not supported
-        with self.assertRaises(ValueError):
-            load_wave_file(sample_file, dtype=np.float)
-        # file not found
-        with self.assertRaises(IOError):
-            load_wave_file(pj(AUDIO_PATH, 'foo_bar.wav'))
-        # not an audio file
-        with self.assertRaises(ValueError):
-            load_wave_file(pj(DATA_PATH, 'README'))
-        # closed file handle
-        with self.assertRaises(ValueError):
-            file_handle = open(sample_file, 'rb')
-            file_handle.close()
-            load_wave_file(file_handle)
-
-
-class TestWriteWaveFileFunction(unittest.TestCase):
-
-    def setUp(self):
-        self.signal = Signal(sample_file)
-        write_wave_file(self.signal, tmp_file)
-        self.result = Signal(sample_file)
-
-    def test_types(self):
-        self.assertIsInstance(self.result, Signal)
-        self.assertIsInstance(self.result, np.ndarray)
-        self.assertTrue(self.result.dtype == np.int16)
-        self.assertTrue(type(self.result.sample_rate) == int)
-
-    def test_values(self):
-        # test wave loader
-        self.assertTrue(np.allclose(self.signal, self.result))
-        self.assertTrue(self.result.sample_rate == 44100)
-        self.assertTrue(self.result.shape == (123481,))
-
-
-class TestLoadAudioFileFunction(unittest.TestCase):
-
-    # this tests both the madmom.audio.signal.load_wave_file() and the
-    # madmom.audio.ffmpeg.load_ffmpeg_file() functions via the universal
-    # load_audio_file() function
-
-    def test_types(self):
-        # test wave loader
-        signal, sample_rate = load_audio_file(sample_file)
-        self.assertIsInstance(signal, np.ndarray)
-        self.assertTrue(signal.dtype == np.int16)
-        self.assertTrue(type(sample_rate) == int)
-        # test ffmpeg loader
-        signal, sample_rate = load_audio_file(stereo_sample_file)
-        self.assertIsInstance(signal, np.ndarray)
-        self.assertTrue(signal.dtype == np.int16)
-        self.assertTrue(type(sample_rate) == int)
-        if sys.version_info[0] == 2:
-            # test unicode string type (Python 2 only)
-            signal, sample_rate = load_audio_file(unicode(sample_file))
-
-    def test_file_handle(self):
-        # test wave loader
-        file_handle = open(sample_file)
-        signal, sample_rate = load_audio_file(file_handle)
-        self.assertIsInstance(signal, np.ndarray)
-        self.assertTrue(signal.dtype == np.int16)
-        self.assertTrue(type(sample_rate) == int)
-        file_handle.close()
-        # closed file handle
-        signal, sample_rate = load_audio_file(file_handle)
-        self.assertIsInstance(signal, np.ndarray)
-        self.assertTrue(signal.dtype == np.int16)
-        self.assertTrue(type(sample_rate) == int)
-        # test ffmpeg loader
-        file_handle = open(sample_file)
-        signal, sample_rate = load_audio_file(file_handle)
-        self.assertIsInstance(signal, np.ndarray)
-        self.assertTrue(signal.dtype == np.int16)
-        self.assertTrue(type(sample_rate) == int)
-        file_handle.close()
-        # closed file handle
-        signal, sample_rate = load_audio_file(file_handle)
-        self.assertIsInstance(signal, np.ndarray)
-        self.assertTrue(signal.dtype == np.int16)
-        self.assertTrue(type(sample_rate) == int)
-
-    def test_values(self):
-        # test wave loader
-        signal, sample_rate = load_audio_file(sample_file)
-        self.assertTrue(np.allclose(signal[:5],
-                                    [-2494, -2510, -2484, -2678, -2833]))
-        self.assertTrue(len(signal) == 123481)
-        self.assertTrue(sample_rate == 44100)
-        self.assertTrue(signal.shape == (123481,))
-        # stereo
-        signal, sample_rate = load_audio_file(stereo_sample_file)
-        self.assertTrue(np.allclose(signal[:4],
-                                    [[33, 38], [35, 36], [29, 34], [36, 31]]))
-        self.assertTrue(len(signal) == 182919)
-        self.assertTrue(sample_rate == 44100)
-        self.assertTrue(signal.shape == (182919, 2))
-        # test ffmpeg loader
-        signal, sample_rate = load_audio_file(stereo_sample_file)
-        self.assertTrue(np.allclose(signal[:4],
-                                    [[33, 38], [35, 36], [29, 34], [36, 31]]))
-        self.assertTrue(len(signal) == 182919)
-        self.assertTrue(sample_rate == 44100)
-        self.assertTrue(signal.shape == (182919, 2))
-
-    def test_start_stop(self):
-        # test wave loader
-        signal, sample_rate = load_audio_file(sample_file, start=1. / 44100,
-                                              stop=5. / 44100)
-        self.assertTrue(np.allclose(signal, [-2510, -2484, -2678, -2833]))
-        self.assertTrue(len(signal) == 4)
-        self.assertTrue(sample_rate == 44100)
-        # test ffmpeg loader
-        signal, sample_rate = load_audio_file(stereo_sample_file,
-                                              start=1. / 44100,
-                                              stop=4. / 44100)
-        self.assertTrue(np.allclose(signal, [[35, 36], [29, 34], [36, 31]]))
-        self.assertTrue(len(signal) == 3)
-        self.assertTrue(sample_rate == 44100)
-
-    def test_downmix(self):
-        # test wave loader
-        signal, sample_rate = load_audio_file(stereo_sample_file,
-                                              num_channels=1)
-        self.assertTrue(np.allclose(signal[:5],
-                                    [35, 35, 31, 33, 33]))
-        self.assertTrue(len(signal) == 182919)
-        self.assertTrue(sample_rate == 44100)
-        self.assertTrue(signal.shape == (182919, ))
-        # test ffmpeg loader
-        signal, sample_rate = load_audio_file(stereo_sample_file,
-                                              num_channels=1)
-        # results are rounded differently, thus allow atol=1
-        self.assertTrue(np.allclose(signal[:5], [35, 35, 31, 33, 33], atol=1))
-        # avconv results in a different length of 182909 samples
-        self.assertTrue(np.allclose(len(signal), 182919, atol=10))
-        self.assertTrue(sample_rate == 44100)
-        # test clipping
-        f = pj(AUDIO_PATH, 'stereo_chirp.wav')
-        signal, _ = load_audio_file(f, num_channels=1)
-        signal_stereo, _ = load_audio_file(f)
-        # sanity checks
-        self.assertTrue(np.allclose(signal_stereo[:, 0], signal_stereo[:, 1]))
-        self.assertTrue(np.allclose(signal_stereo.mean(axis=1),
-                                    signal_stereo[:, 0]))
-        # check clipping
-        self.assertTrue(np.allclose(signal, signal_stereo[:, 1]))
-
-    def test_upmix(self):
-        signal, sample_rate = load_audio_file(sample_file, num_channels=2)
-        self.assertTrue(np.allclose(signal[:5],
-                                    [[-2494, -2494], [-2510, -2510],
-                                     [-2484, -2484], [-2678, -2678],
-                                     [-2833, -2833]]))
-        self.assertTrue(len(signal) == 123481)
-        self.assertTrue(sample_rate == 44100)
-        self.assertTrue(signal.shape == (123481, 2))
-
-    def test_resample(self):
-        # method must chose ffmpeg loader
-        signal, sample_rate = load_audio_file(stereo_sample_file,
-                                              sample_rate=22050)
-        self.assertTrue(sample_rate == 22050)
-        # avconv does round differently, thus allow atol=1
-        # result: [[33, 38], [33, 33], [36, 31], [35, 35], [32, 35]]
-        self.assertTrue(np.allclose(signal[:5], [[34, 38], [32, 33], [37, 31],
-                                                 [35, 35], [32, 34]], atol=1))
-        # also downmix
-        signal, sample_rate = load_audio_file(stereo_sample_file,
-                                              sample_rate=22050,
-                                              num_channels=1)
-        self.assertTrue(np.allclose(signal[:5], [36, 33, 34, 35, 33], atol=1))
-        # avconv results in a different length of 91450 samples
-        self.assertTrue(np.allclose(len(signal), 91460, atol=10))
-
-    def test_errors(self):
-        # file not found
-        with self.assertRaises(IOError):
-            load_audio_file(pj(AUDIO_PATH, 'sample.flac'))
-        # not an audio file
-        with self.assertRaises(LoadAudioFileError):
-            load_audio_file(pj(DATA_PATH, 'README'))
-
-
 # signal classes
 class TestSignalClass(unittest.TestCase):
 
@@ -933,7 +699,7 @@ class TestSignalClass(unittest.TestCase):
         result = Signal(sig_1d)
         self.assertIsInstance(result, Signal)
         self.assertIsInstance(result, np.ndarray)
-        self.assertTrue(result.dtype == np.float)
+        self.assertTrue(result.dtype == float)
         self.assertIsInstance(result.start, type(None))
         self.assertIsInstance(result.stop, type(None))
         self.assertIsInstance(result.num_samples, int)
@@ -946,7 +712,7 @@ class TestSignalClass(unittest.TestCase):
         result = Signal(sig_1d, 1)
         self.assertIsInstance(result, Signal)
         self.assertIsInstance(result, np.ndarray)
-        self.assertTrue(result.dtype == np.float)
+        self.assertTrue(result.dtype == float)
         self.assertIsInstance(result.start, type(None))
         self.assertIsInstance(result.stop, type(None))
         self.assertIsInstance(result.num_samples, int)
@@ -989,6 +755,12 @@ class TestSignalClass(unittest.TestCase):
         self.assertTrue(result.num_channels == 2)
         self.assertTrue(result.length == 9 / 12.3)
         self.assertTrue(result.ndim == 2)
+
+    def test_num_channels(self):
+        result = Signal(sig_2d, sample_rate=1, num_channels=1)
+        self.assertTrue(result.shape == (9, ))
+        self.assertTrue(np.allclose(result,
+                                    [0.5, 0, 1, 0, 0.5, 0.5, 0.5, 0, 1]))
 
     def test_values_file(self):
         result = Signal(sample_file)
@@ -1109,6 +881,26 @@ class TestSignalProcessorClass(unittest.TestCase):
         self.assertTrue(result.num_channels == 1)
         self.assertTrue(np.allclose(result.length, 2.8))
 
+    def test_pickle(self):
+        self.processor.dump(tmp_file)
+        processor = SignalProcessor.load(tmp_file)
+        self.assertEqual(type(self.processor), type(processor))
+        self.assertEqual(self.processor.sample_rate,
+                         processor.sample_rate)
+        self.assertEqual(self.processor.num_channels,
+                         processor.num_channels)
+        self.assertEqual(self.processor.start, processor.start)
+        self.assertEqual(self.processor.stop, processor.stop)
+        self.assertEqual(self.processor.norm, processor.norm)
+        self.assertEqual(self.processor.gain, processor.gain)
+
+    @unittest.skipIf(sys.version_info < (3, 2), 'assertWarns needs Python 3.2')
+    def test_multiprocessing(self):
+        from concurrent.futures import ProcessPoolExecutor
+        sig = Signal(sample_file)
+        pool = ProcessPoolExecutor(max_workers=2)
+        pool.submit(self.processor, sig).result()
+
 
 # framing functions
 class TestSignalFrameFunction(unittest.TestCase):
@@ -1116,10 +908,10 @@ class TestSignalFrameFunction(unittest.TestCase):
     def test_types(self):
         result = signal_frame(np.arange(10), 0, 4, 2)
         self.assertIsInstance(result, np.ndarray)
-        self.assertTrue(result.dtype == np.int)
-        result = signal_frame(np.arange(10, dtype=np.float), 0, 4, 2)
+        self.assertTrue(result.dtype == int)
+        result = signal_frame(np.arange(10, dtype=float), 0, 4, 2)
         self.assertIsInstance(result, np.ndarray)
-        self.assertTrue(result.dtype == np.float)
+        self.assertTrue(result.dtype == float)
         signal = Signal(sample_file)
         result = signal_frame(signal, 0, 4, 2)
         self.assertIsInstance(result, Signal)
@@ -1201,6 +993,49 @@ class TestSignalFrameFunction(unittest.TestCase):
         # test with float origin with half the size of the frame size
         result = signal_frame(np.arange(10), 0, 5, 2, -2.5)
         self.assertTrue(np.allclose(result, [0, 1, 2, 3, 4]))
+
+    def test_pad(self):
+        # 1D signal
+        x = np.arange(10, 20)
+        # pad with a fixed value
+        result = signal_frame(x, 0, frame_size=4, hop_size=2, pad=-1)
+        self.assertTrue(np.allclose(result, [-1, -1, 10, 11]))
+        result = signal_frame(x, 5, frame_size=4, hop_size=2, pad=-1)
+        self.assertTrue(np.allclose(result, [18, 19, -1, -1]))
+        # repeat first value
+        result = signal_frame(x, 0, frame_size=4, hop_size=2, pad='repeat')
+        self.assertTrue(np.allclose(result, [10, 10, 10, 11]))
+        result = signal_frame(x, -10, frame_size=4, hop_size=2, pad='repeat')
+        self.assertTrue(np.allclose(result, [10, 10, 10, 10]))
+        # repeat last value
+        result = signal_frame(x, 0, frame_size=4, hop_size=2, pad='repeat')
+        self.assertTrue(np.allclose(result, [10, 10, 10, 11]))
+        result = signal_frame(x, 20, frame_size=3, hop_size=3, pad='repeat')
+        self.assertTrue(np.allclose(result, [19, 19, 19]))
+
+        # 2D signal
+        x = np.arange(10, 30).reshape((10, 2))
+        # pad with a fixed value
+        result = signal_frame(x, 0, frame_size=4, hop_size=2, pad=-1)
+        self.assertTrue(
+            np.allclose(result, [[-1, -1], [-1, -1], [10, 11], [12, 13]]))
+        result = signal_frame(x, 0, frame_size=4, hop_size=2, pad=[-1, -2])
+        self.assertTrue(
+            np.allclose(result, [[-1, -2], [-1, -2], [10, 11], [12, 13]]))
+        # pad by repeating first/last frame
+        result = signal_frame(x, 0, frame_size=4, hop_size=2, pad='repeat')
+        self.assertTrue(
+            np.allclose(result, [[10, 11], [10, 11], [10, 11], [12, 13]]))
+        result = signal_frame(x, 5, frame_size=4, hop_size=2, pad='repeat')
+        self.assertTrue(
+            np.allclose(result, [[26, 27], [28, 29], [28, 29], [28, 29]]))
+        # requested frame out of signal
+        result = signal_frame(x, -2, frame_size=4, hop_size=2, pad='repeat')
+        self.assertTrue(
+            np.allclose(result, [[10, 11], [10, 11], [10, 11], [10, 11]]))
+        result = signal_frame(x, 7, frame_size=4, hop_size=2, pad='repeat')
+        self.assertTrue(
+            np.allclose(result, [[28, 29], [28, 29], [28, 29], [28, 29]]))
 
 
 # framing classes
@@ -1490,6 +1325,15 @@ class TestFramedSignalClass(unittest.TestCase):
                                     [-9.03089987, -4.25968732, -3.01029996,
                                      -4.25968732, -4.25968732]))
 
+    def test_iterating(self):
+        frames = FramedSignal(sig_1d, frame_size=4, hop_size=2)
+        _ = frames[range(frames.num_frames)[0]]
+        _ = frames[np.arange(frames.num_frames)[0]]
+        _ = frames[np.arange(frames.num_frames, dtype=int)[0]]
+        if sys.version_info[0] == 2:
+            _ = frames[range(frames.num_frames)[0]]
+            _ = frames[np.long(range(frames.num_frames)[0])]
+
 
 class TestFramedSignalProcessorClass(unittest.TestCase):
 
@@ -1585,7 +1429,16 @@ class TestFramedSignalProcessorClass(unittest.TestCase):
         self.processor.end = 'normal'
         self.assertTrue(self.processor.end == 'normal')
 
+    def test_pickle(self):
+        self.processor.dump(tmp_file)
+        processor = FramedSignalProcessor.load(tmp_file)
+        self.assertEqual(type(self.processor), type(processor))
+        self.assertEqual(self.processor.frame_size, processor.frame_size)
+        self.assertEqual(self.processor.hop_size, processor.hop_size)
+        self.assertEqual(self.processor.fps, processor.fps)
+        self.assertEqual(self.processor.end, processor.end)
+
 
 # clean up
-def teardown():
+def teardown_module():
     os.unlink(tmp_file)

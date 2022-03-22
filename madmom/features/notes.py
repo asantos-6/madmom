@@ -15,201 +15,23 @@ from __future__ import absolute_import, division, print_function
 
 import numpy as np
 
-from .onsets import peak_picking, OnsetPeakPickingProcessor
-from ..processors import SequentialProcessor, ParallelProcessor
-from ..utils import suppress_warnings, combine_events
-
-
-@suppress_warnings
-def load_notes(filename):
-    """
-    Load the notes from a file.
-
-    Parameters
-    ----------
-    filename : str or file handle
-        Input file to load the notes from.
-
-    Returns
-    -------
-    numpy array
-        Notes.
-
-    Notes
-    -----
-    The file format must be (duration and velocity being optional):
-
-    'note_time' 'MIDI_note' ['duration' ['MIDI_velocity']]
-
-    with one note per line and individual fields separated by whitespace.
-
-    """
-    return np.loadtxt(filename)
-
-
-def expand_notes(notes, duration=0.6, velocity=100):
-    """
-    Expand the notes to include all columns.
-
-    Parameters
-    ----------
-    notes : numpy array, shape (num_notes, 2)
-        Notes, one per row (column definition see notes).
-    duration : float, optional
-        Note duration if not defined by `notes`.
-    velocity : int, optional
-        Note velocity if not defined by `notes`.
-
-    Returns
-    -------
-    numpy array
-        Notes (including note duration and velocity).
-
-    Notes
-    -----
-    The note columns format must be (duration and velocity being optional):
-
-    'note_time' 'MIDI_note' ['duration' ['MIDI_velocity']]
-
-    """
-    if not notes.ndim == 2:
-        raise ValueError('unknown format for `notes`')
-    rows, columns = notes.shape
-    if columns == 4:
-        return notes
-    elif columns == 3:
-        new_columns = np.ones((rows, 1)) * velocity
-    elif columns == 2:
-        new_columns = np.ones((rows, 2)) * velocity
-        new_columns[:, 0] = duration
-    else:
-        raise ValueError('unable to handle `notes` with %d columns' % columns)
-    # return the notes
-    notes = np.hstack((notes, new_columns))
-    return notes
-
-
-def write_notes(notes, filename, fmt=None, delimiter='\t', header=''):
-    """
-    Write the notes to a file (as many columns as given).
-
-    Parameters
-    ----------
-    notes : numpy array, shape (num_notes, 2)
-        Notes, one per row (column definition see notes).
-    filename : str or file handle
-        Output filename or handle.
-    fmt : list, optional
-        Format of the fields (i.e. columns, see notes)
-    delimiter : str, optional
-        String or character separating the columns.
-    header : str, optional
-        Header to be written (as a comment).
-
-    Returns
-    -------
-    numpy array
-        Notes.
-
-    Notes
-    -----
-    The note columns format must be (duration and velocity being optional):
-
-    'note_time' 'MIDI_note' ['duration' ['MIDI_velocity']]
-
-    """
-    from ..utils import write_events
-    # set default format
-    if fmt is None:
-        fmt = list(('%.3f', '%d', '%.3f', '%d'))
-    if not notes.ndim == 2:
-        raise ValueError('unknown format for `notes`')
-    # truncate to the number of colums given
-    fmt = delimiter.join(fmt[:notes.shape[1]])
-    # write the notes
-    write_events(notes, filename, fmt=fmt, header=header)
-    # also return them
-    return notes
-
-
-def write_midi(notes, filename, duration=0.6, velocity=100):
-    """
-    Write the notes to a MIDI file.
-
-    Parameters
-    ----------
-    notes : numpy array, shape (num_notes, 2)
-        Notes, one per row (column definition see notes).
-    filename : str
-        Output MIDI file.
-    duration : float, optional
-        Note duration if not defined by `notes`.
-    velocity : int, optional
-        Note velocity if not defined by `notes`.
-
-    Returns
-    -------
-    numpy array
-        Notes (including note length and velocity).
-
-    Notes
-    -----
-    The note columns format must be (duration and velocity being optional):
-
-    'note_time' 'MIDI_note' ['duration' ['MIDI_velocity']]
-
-    """
-    from ..utils.midi import process_notes
-    # expand the array to have a default duration and velocity
-    notes = expand_notes(notes, duration, velocity)
-    # write the notes to the file and return them
-    return process_notes(notes, filename)
-
-
-def write_mirex_format(notes, filename, duration=0.6):
-    """
-    Write the frequencies of the notes to file (in MIREX format).
-
-    Parameters
-    ----------
-    notes : numpy array, shape (num_notes, 2)
-        Notes, one per row (column definition see notes).
-    filename : str or file handle
-        Output filename or handle.
-    duration : float, optional
-        Note duration if not defined by `notes`.
-
-    Returns
-    -------
-    numpy array
-        Notes in MIREX format.
-
-    Notes
-    -----
-    The note columns format must be (duration and velocity being optional):
-
-    'note_time' 'MIDI_note' ['duration' ['MIDI_velocity']]
-
-    The output format required by MIREX is:
-
-    'onset_time' 'offset_time' 'note_frequency'
-
-    """
-    from ..audio.filters import midi2hz
-    # expand the notes if needed
-    notes = expand_notes(notes, duration)
-    # report offset time instead of duration
-    notes = np.vstack((notes[:, 0], notes[:, 0] + notes[:, 2],
-                       midi2hz(notes[:, 1]))).T
-    # MIREX format: onset \t offset \t frequency
-    write_notes(notes, filename, fmt=list(('%.3f', '%.3f', '%.1f', )))
-    return notes
+from .onsets import OnsetPeakPickingProcessor, peak_picking
+from ..processors import ParallelProcessor, Processor, SequentialProcessor
+from ..utils import combine_events
 
 
 # class for detecting notes with a RNN
 class RNNPianoNoteProcessor(SequentialProcessor):
     """
-    Processor to get a (piano) note activation function from a RNN.
+    Processor to get a (piano) note onset activation function from a RNN.
+
+    References
+    ----------
+
+    .. [1] Sebastian Böck and Markus Schedl,
+           "Polyphonic Piano Note Transcription with Recurrent Neural Networks"
+           Proceedings of the 37th International Conference on Acoustics,
+           Speech and Signal Processing (ICASSP), 2012.
 
     Examples
     --------
@@ -266,9 +88,9 @@ class RNNPianoNoteProcessor(SequentialProcessor):
         super(RNNPianoNoteProcessor, self).__init__((pre_processor, nn))
 
 
-class NotePeakPickingProcessor(OnsetPeakPickingProcessor):
+class NoteOnsetPeakPickingProcessor(OnsetPeakPickingProcessor):
     """
-    This class implements the note peak-picking functionality.
+    This class implements the note onset peak-picking functionality.
 
     Parameters
     ----------
@@ -309,26 +131,43 @@ class NotePeakPickingProcessor(OnsetPeakPickingProcessor):
 
     Examples
     --------
-    Create a NotePeakPickingProcessor. The returned array represents the note
-    positions in seconds, thus the expected sampling rate has to be given.
+    Create a NoteOnsetPeakPickingProcessor. The returned array represents the
+    positions of the onsets in seconds, thus the frame rate has to be given.
+    To obtain piano MIDI note numbers, the pitch offset must be set to 21.
 
-    >>> proc = NotePeakPickingProcessor(fps=100)
+    >>> proc = NoteOnsetPeakPickingProcessor(fps=100, pitch_offset=21)
     >>> proc  # doctest: +ELLIPSIS
-    <madmom.features.notes.NotePeakPickingProcessor object at 0x...>
+    <madmom.features.notes.NoteOnsetPeakPickingProcessor object at 0x...>
 
-    Call this NotePeakPickingProcessor with the note activations from an
+    Call this NoteOnsetPeakPickingProcessor with the note activations from an
     RNNPianoNoteProcessor.
 
     >>> act = RNNPianoNoteProcessor()('tests/data/audio/stereo_sample.wav')
-    >>> proc(act)  # doctest: +ELLIPSIS +NORMALIZE_WHITESPACE
-    array([[ 0.14, 72. ],
-           [ 1.56, 41. ],
-           [ 3.37, 75. ]])
+    >>> proc(act)  # doctest: +ELLIPSIS
+    array([[ 0.14, 72.  ],
+           [ 1.56, 41.  ],
+           [ 3.37, 75.  ]])
 
     """
+    THRESHOLD = 0.5  # binary threshold
+    SMOOTH = 0.
+    PRE_AVG = 0.
+    POST_AVG = 0.
+    PRE_MAX = 0.
+    POST_MAX = 0.
+    COMBINE = 0.03
+    DELAY = 0.
 
-    # pitch offset to be applied to the reported notes
-    pitch_offset = 21
+    def __init__(self, threshold=THRESHOLD, smooth=SMOOTH, pre_avg=PRE_AVG,
+                 post_avg=POST_AVG, pre_max=PRE_MAX, post_max=POST_MAX,
+                 combine=COMBINE, delay=DELAY, fps=None, pitch_offset=0,
+                 **kwargs):
+        # pylint: disable=unused-argument
+        super(NoteOnsetPeakPickingProcessor, self).__init__(
+            threshold=threshold, smooth=smooth, pre_avg=pre_avg,
+            post_avg=post_avg, pre_max=pre_max, post_max=post_max,
+            combine=combine, delay=delay, fps=fps)
+        self.pitch_offset = pitch_offset
 
     def process(self, activations, **kwargs):
         """
@@ -351,10 +190,13 @@ class NotePeakPickingProcessor(OnsetPeakPickingProcessor):
                             self.pre_max, self.post_max]) * self.fps
         timings = np.round(timings).astype(int)
         # detect the peaks (function returns int indices)
-        notes = peak_picking(activations, self.threshold, *timings)
-        # split onsets and pitches
-        onsets = notes[0].astype(np.float) / self.fps
-        pitches = notes[1] + self.pitch_offset
+        onsets, pitches = peak_picking(activations, self.threshold, *timings)
+        # if no note onsets are detected, return empty array
+        if not onsets.any():
+            return np.empty((0, 2))
+        # convert onset timing and apply pitch offset
+        onsets = onsets.astype(float) / self.fps
+        pitches += self.pitch_offset
         # shift if necessary
         if self.delay:
             onsets += self.delay
@@ -373,4 +215,242 @@ class NotePeakPickingProcessor(OnsetPeakPickingProcessor):
             # just zip all detected notes
             notes = list(zip(onsets, pitches))
         # sort the detections and return as numpy array
-        return np.asarray(sorted(notes))
+        return np.array(sorted(notes))
+
+
+class NotePeakPickingProcessor(NoteOnsetPeakPickingProcessor):
+    """
+    Deprecated as of version 0.17. Will be removed in version 0.19. Use
+    :class:`NoteOnsetPeakPickingProcessor` instead and set `fps` and
+    `pitch_offset` accordingly.
+
+    """
+
+    def __init__(self, fps=100, pitch_offset=21, **kwargs):
+        # pylint: disable=unused-argument
+        super(NotePeakPickingProcessor, self).__init__(
+            fps=fps, pitch_offset=pitch_offset, **kwargs)
+
+
+def _cnn_pad(data):
+    """Pad the data by repeating the first and last frame 5 times."""
+    pad_start = np.repeat(data[:1], 5, axis=0)
+    pad_stop = np.repeat(data[-1:], 5, axis=0)
+    return np.concatenate((pad_start, data, pad_stop))
+
+
+class CNNPianoNoteProcessor(SequentialProcessor):
+    """
+    Processor to get piano note activations from a CNN in a multi-task fashion
+    which simultaneously detects onsets and intermediate note features.
+
+    References
+    ----------
+
+    .. [1] Rainer Kelz, Sebastian Böck and Gerhard Widmer,
+           "Deep Polyphonic ADSR Piano Note Transcription",
+           Proceedings of the 44th International Conference on Acoustics,
+           Speech and Signal Processing (ICASSP), 2019.
+
+    Examples
+    --------
+    Create a CNNPianoNoteProcessor and pass a file through the processor
+    to obtain a note activation function (sampled with 50 frames per second).
+
+    >>> proc = CNNPianoNoteProcessor()
+    >>> proc  # doctest: +ELLIPSIS
+    <madmom.features.notes.CNNPianoNoteProcessor object at 0x...>
+    >>> act = proc('tests/data/audio/stereo_sample.wav')
+
+    The activations are returned as a 3-dimensional array, the first axis
+    representing time, the second the MIDI notes, and the third dimension
+    contains the (sounding) note and onset activations (first and second value,
+    respectively).
+
+    >>> act.shape
+    (208, 88, 3)
+
+    Sounding notes,
+
+    >>> act[..., 0]  # doctest: +NORMALIZE_WHITESPACE +ELLIPSIS
+    array([[0., 0., ..., 0., 0.],
+           [0., 0., ..., 0., 0.],
+           ...,
+           [0., 0., ..., 0., 0.],
+           [0., 0., ..., 0., 0.]], dtype=float32)
+
+    and onset activations.
+
+    >>> act[..., 1]  # doctest: +NORMALIZE_WHITESPACE +ELLIPSIS
+    array([[0.     , 0.00001, ..., 0.     , 0.     ],
+           [0.     , 0.00002, ..., 0.     , 0.     ],
+           ...,
+           [0.     , 0.     , ..., 0.     , 0.     ],
+           [0.     , 0.     , ..., 0.     , 0.     ]], dtype=float32)
+
+    """
+
+    def __init__(self, **kwargs):
+        from ..audio.signal import SignalProcessor, FramedSignalProcessor
+        from ..audio.stft import ShortTimeFourierTransformProcessor
+        from ..audio.spectrogram import (FilteredSpectrogramProcessor,
+                                         LogarithmicSpectrogramProcessor)
+        from ..models import NOTES_CNN
+        from ..ml.nn import NeuralNetworkEnsemble
+        # define pre-processing chain
+        sig = SignalProcessor(num_channels=1, sample_rate=44100)
+        frames = FramedSignalProcessor(frame_size=4096, fps=50)
+        stft = ShortTimeFourierTransformProcessor()  # caching FFT window
+        filt = FilteredSpectrogramProcessor(num_bands=24, fmin=30, fmax=10000)
+        spec = LogarithmicSpectrogramProcessor(add=1)
+        # pre-processes everything sequentially
+        pre_processor = SequentialProcessor(
+            (sig, frames, stft, filt, spec, _cnn_pad))
+        # process the pre-processed signal with a NN
+        nn = NeuralNetworkEnsemble.load(NOTES_CNN)
+        # instantiate a SequentialProcessor
+        super(CNNPianoNoteProcessor, self).__init__((pre_processor, nn))
+
+
+class ADSRNoteTrackingProcessor(Processor):
+    """
+    Track the notes with an HMM based on a model of attack, decay, sustain,
+    release (ADSR) envelopes.
+
+    Parameters
+    ----------
+    onset_prob : float, optional
+        Transition probability to enter an onset state.
+    note_prob : float, optional
+        Transition probability to enter a sounding note state.
+    offset_prob : float, optional
+        Transition probability to enter an offset state.
+    attack_length : float, optional
+        Minimum required attack (i.e. onset activation required) length.
+    decay_length : float, optional
+        Minimum required decay (i.e. note activation required) length.
+    release_length : float, optional
+        Minimum required release (i.e. note activation required) length.
+    complete : bool, optional
+        Require notes to transition all states (i.e. discard incomplete notes).
+    onset_threshold : float, optional
+        Require notes to have an onset activation greater or equal this
+        threshold.
+    note_threshold : float, optional
+        Require notes to have a note activation greater equal this threshold.
+    fps : float, optional
+        Frames per second.
+    pitch_offset : int, optional
+        Pitch offset for the detected notes.
+
+    References
+    ----------
+
+    .. [1] Rainer Kelz, Sebastian Böck and Gerhard Widmer,
+           "Deep Polyphonic ADSR Piano Note Transcription",
+           Proceedings of the 44th International Conference on Acoustics,
+           Speech and Signal Processing (ICASSP), 2019.
+
+    Examples
+    --------
+    Create a CNNPianoNoteProcessor and pass a file through the processor
+    to obtain a note activation function (sampled with 50 frames per second).
+
+    >>> proc = CNNPianoNoteProcessor()
+    >>> act = proc('tests/data/audio/stereo_sample.wav')
+
+    Track the notes by means on ADSR note tracking:
+    >>> adsr = ADSRNoteTrackingProcessor()
+    >>> adsr(act)  # doctest: +NORMALIZE_WHITESPACE
+    array([[ 0.12, 72. , 1.44],
+           [ 1.54, 41. , 1.84],
+           [ 2.5 , 77. , 1.  ],
+           [ 2.52, 65. , 0.96],
+           [ 2.54, 60. , 0.82],
+           [ 2.58, 56. , 0.82],
+           [ 3.34, 75. , 0.82],
+           [ 3.42, 43. , 0.74]])
+    """
+
+    def __init__(self, onset_prob=0.8, note_prob=0.8, offset_prob=0.5,
+                 attack_length=0.04, decay_length=0.04, release_length=0.02,
+                 complete=True, onset_threshold=0.5, note_threshold=0.5,
+                 fps=50, pitch_offset=21, **kwargs):
+        from .notes_hmm import (ADSRStateSpace, ADSRTransitionModel,
+                                ADSRObservationModel)
+        from ..ml.hmm import HiddenMarkovModel
+        # state space
+        self.st = ADSRStateSpace(attack_length=int(attack_length * fps),
+                                 decay_length=int(decay_length * fps),
+                                 release_length=int(release_length * fps))
+        # transition model
+        self.tm = ADSRTransitionModel(self.st, onset_prob=onset_prob,
+                                      note_prob=note_prob,
+                                      offset_prob=offset_prob)
+        # observation model
+        self.om = ADSRObservationModel(self.st)
+        # instantiate a HMM
+        self.hmm = HiddenMarkovModel(self.tm, self.om, None)
+        # save variables
+        self.complete = complete
+        self.onset_threshold = onset_threshold
+        self.note_threshold = note_threshold
+        self.pitch_offset = pitch_offset
+        self.fps = fps
+
+    def process(self, activations, **kwargs):
+        """
+        Detect the notes in the given activation function.
+
+        Parameters
+        ----------
+        activations : numpy array
+            Combined note and onset activation function.
+
+        Returns
+        -------
+        notes : numpy array
+            Detected notes [seconds, pitches, duration].
+
+        """
+        notes = []
+        note_path = np.arange(self.st.attack, self.st.release)
+        # process each pitch individually
+        for pitch in range(activations.shape[1]):
+            # decode activations for this pitch with HMM
+            with np.errstate(divide='ignore'):
+                # ignore warnings when taking the log of 0
+                path, _ = self.hmm.viterbi(activations[:, pitch, :])
+            # extract HMM note segments
+            segments = np.logical_and(path > self.st.attack,
+                                      path < self.st.release)
+            # extract start and end positions (transition points)
+            idx = np.nonzero(np.diff(segments.astype(int)))[0]
+            # add end if needed
+            if len(idx) % 2 != 0:
+                idx = np.append(idx, [len(activations)])
+            # all sounding frames
+            frames = activations[:, pitch, 0]
+            # all frames with onset activations
+            onsets = activations[:, pitch, 1]
+            # iterate over all segments to decide which to keep
+            for onset, offset in idx.reshape((-1, 2)):
+                # extract note segment
+                segment = path[onset:offset]
+                # discard segment which do not contain the complete note path
+                if self.complete and np.setdiff1d(note_path, segment).any():
+                    continue
+                # discard segments without a real note
+                if frames[onset:offset].max() < self.note_threshold:
+                    continue
+                # discard segments without a real onset
+                if onsets[onset:offset].max() < self.onset_threshold:
+                    continue
+                # append segment as note
+                notes.append([onset / self.fps, pitch + self.pitch_offset,
+                              (offset - onset) / self.fps])
+        # if no note notes are detected, return empty array
+        if len(notes) == 0:
+            return np.empty((0, 3))
+        # sort the notes, convert timing information and return them
+        return np.array(sorted(notes), ndmin=2)

@@ -22,7 +22,7 @@ from __future__ import absolute_import, division, print_function
 
 import numpy as np
 
-from madmom.processors import Processor
+from ..processors import Processor
 
 
 class Activations(np.ndarray):
@@ -76,9 +76,6 @@ class Activations(np.ndarray):
             obj = cls.load(data, fps, sep)
         else:
             raise TypeError("wrong input data for Activations")
-        # frame rate must be set
-        if obj.fps is None:
-            raise TypeError("frame rate for Activations must be set")
         # return the object
         return obj
 
@@ -121,9 +118,12 @@ class Activations(np.ndarray):
             # numpy binary format
             data = np.load(infile)
             if isinstance(data, np.lib.npyio.NpzFile):
-                # .npz file, set the frame rate if none is given
-                if fps is None:
-                    fps = float(data['fps'])
+                # .npz file, extract the frame rate if given
+                if 'fps' in data.files:
+                    try:
+                        fps = float(data['fps'])
+                    except ValueError:
+                        fps = None
                 # and overwrite the data
                 data = data['activations']
         else:
@@ -182,6 +182,13 @@ class Activations(np.ndarray):
             header = "FPS:%f" % self.fps
             np.savetxt(outfile, np.atleast_2d(self), fmt=fmt, delimiter=sep,
                        header=header)
+        # TODO: check if closing the file is really the best option to avoid
+        #       fails in tests/test_bin.py
+        try:
+            outfile.close()
+        except AttributeError:
+            # a string filename cannot be closed
+            pass
 
 
 class ActivationsProcessor(Processor):
@@ -275,17 +282,21 @@ class ActivationsProcessor(Processor):
 
 
 # finally import the submodules
-from . import onsets, beats, notes, tempo, chords
+from . import beats, chords, downbeats, key, notes, onsets, tempo
 
 # import often used classes
 from .beats import (BeatDetectionProcessor, BeatTrackingProcessor,
                     CRFBeatDetectionProcessor, DBNBeatTrackingProcessor,
-                    DBNDownBeatTrackingProcessor, MultiModelSelectionProcessor,
-                    PatternTrackingProcessor, RNNBeatProcessor,
-                    RNNDownBeatProcessor)
+                    MultiModelSelectionProcessor, RNNBeatProcessor)
 from .chords import (CNNChordFeatureProcessor, CRFChordRecognitionProcessor,
                      DeepChromaChordRecognitionProcessor)
-from .notes import RNNPianoNoteProcessor
-from .onsets import (CNNOnsetProcessor, PeakPickingProcessor,
+from .downbeats import (RNNDownBeatProcessor, DBNDownBeatTrackingProcessor,
+                        PatternTrackingProcessor, RNNBarProcessor,
+                        DBNBarTrackingProcessor)
+from .key import CNNKeyRecognitionProcessor
+from .notes import (CNNPianoNoteProcessor, ADSRNoteTrackingProcessor,
+                    NoteOnsetPeakPickingProcessor, NotePeakPickingProcessor,
+                    RNNPianoNoteProcessor)
+from .onsets import (CNNOnsetProcessor, OnsetPeakPickingProcessor,
                      RNNOnsetProcessor, SpectralOnsetProcessor)
 from .tempo import TempoEstimationProcessor

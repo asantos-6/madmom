@@ -14,8 +14,8 @@ listed in the following, please file an issue:
 
  - Detected chord segments are adjusted to fit the length of the annotations.
    In particular, this means that, if necessary, filler segments of 'no chord'
-   are added at beginnings and ends. This can result in lower
-   under-segmentation scores compared to the original implementation.
+   are added at beginnings and ends. This can result in different segmentation
+   scores compared to the original implementation.
 
 References
 ----------
@@ -32,18 +32,41 @@ References
 import numpy as np
 
 from . import evaluation_io, EvaluationMixin
+from ..io import load_chords
 
 
-CHORD_DTYPE = [('root', np.int),
-               ('bass', np.int),
-               ('intervals', np.int, (12,))]
+CHORD_DTYPE = [('root', int),
+               ('bass', int),
+               ('intervals', int, (12,))]
 
-CHORD_ANN_DTYPE = [('start', np.float),
-                   ('end', np.float),
+CHORD_ANN_DTYPE = [('start', float),
+                   ('end', float),
                    ('chord', CHORD_DTYPE)]
 
-NO_CHORD = (-1, -1, np.zeros(12, dtype=np.int))
-UNKNOWN_CHORD = (-1, -1, np.ones(12, dtype=np.int) * -1)
+NO_CHORD = (-1, -1, np.zeros(12, dtype=int))
+UNKNOWN_CHORD = (-1, -1, np.ones(12, dtype=int) * -1)
+
+
+def encode(chord_labels):
+    """
+    Encodes chord labels to numeric interval representations.
+
+    Parameters
+    ----------
+    chord_labels : numpy structured array
+        Chord segments in `madmom.io.SEGMENT_DTYPE` format
+
+    Returns
+    -------
+    encoded_chords : numpy structured array
+        Chords in `CHORD_ANN_DTYPE` format
+
+    """
+    encoded_chords = np.zeros(len(chord_labels), dtype=CHORD_ANN_DTYPE)
+    encoded_chords['start'] = chord_labels['start']
+    encoded_chords['end'] = chord_labels['end']
+    encoded_chords['chord'] = chords(chord_labels['label'])
+    return encoded_chords
 
 
 def chords(labels):
@@ -60,7 +83,7 @@ def chords(labels):
     -------
     chords : numpy.array
         Structured array with columns 'root', 'bass', and 'intervals',
-        containing a numeric representation of chords.
+        containing a numeric representation of chords (`CHORD_DTYPE`).
 
     """
     crds = np.zeros(len(labels), dtype=CHORD_DTYPE)
@@ -76,8 +99,8 @@ def chords(labels):
 
 def chord(label):
     """
-    Transform a chord label into the internal numeric represenation of
-    (root, bass, intervals array).
+    Transform a chord label into the internal numeric representation of
+    (root, bass, intervals array) as defined by `CHORD_DTYPE`.
 
     Parameters
     ----------
@@ -221,7 +244,7 @@ def interval_list(intervals_str, given_pitch_classes=None):
 
     """
     if given_pitch_classes is None:
-        given_pitch_classes = np.zeros(12, dtype=np.int)
+        given_pitch_classes = np.zeros(12, dtype=int)
     for int_def in intervals_str[1:-1].split(','):
         int_def = int_def.strip()
         if int_def[0] == '*':
@@ -229,6 +252,7 @@ def interval_list(intervals_str, given_pitch_classes=None):
         else:
             given_pitch_classes[interval(int_def)] = 1
     return given_pitch_classes
+
 
 # mapping of shorthand interval notations to the actual interval representation
 _shorthands = {
@@ -281,50 +305,44 @@ def chord_intervals(quality_str):
     if list_idx != 0:
         ivs = _shorthands[quality_str[:list_idx]].copy()
     else:
-        ivs = np.zeros(12, dtype=np.int)
+        ivs = np.zeros(12, dtype=int)
 
     return interval_list(quality_str[list_idx:], ivs)
 
 
-def load_chords(filename):
+def merge_chords(chords):
     """
-    Load chords from a text file.
-
-    The chord must follow the syntax defined in [1]_.
+    Merge consecutive chord annotations if they represent the same chord.
 
     Parameters
     ----------
-    filename : str
-        File containing chord segments.
+    chords : numpy structured arrray
+        Chord annotations to be merged, in `CHORD_ANN_DTYPE` format.
 
     Returns
     -------
-    crds : numpy structured array
-        Structured array with columns "start", "end", and "chord",
-        containing the beginning, end, and chord definition of chord
-        segments.
-
-    References
-    ----------
-    .. [1] Christopher Harte, "Towards Automatic Extraction of Harmony
-           Information from Music Signals." Dissertation,
-           Department for Electronic Engineering, Queen Mary University of
-           London, 2010.
+    merged_chords : numpy structured array
+        Merged chord annotations, in `CHORD_ANN_DTYPE` format.
 
     """
-    # TODO: Join consecutive labels of identical chords
-    start, end, chord_labels = [], [], []
-    with open(filename, 'r') as f:
-        for line in f:
-            s, e, l = line.split()
-            start.append(float(s))
-            end.append(float(e))
-            chord_labels.append(l)
+    merged_starts = []
+    merged_ends = []
+    merged_chords = []
+    prev_chord = None
+    for start, end, chord in chords:
+        if chord != prev_chord:
+            prev_chord = chord
+            merged_starts.append(start)
+            merged_ends.append(end)
+            merged_chords.append(chord)
+        else:
+            # prolong the previous chord
+            merged_ends[-1] = end
 
-    crds = np.zeros(len(start), dtype=CHORD_ANN_DTYPE)
-    crds['start'] = start
-    crds['end'] = end
-    crds['chord'] = chords(chord_labels)
+    crds = np.zeros(len(merged_chords), dtype=CHORD_ANN_DTYPE)
+    crds['start'] = merged_starts
+    crds['end'] = merged_ends
+    crds['chord'] = merged_chords
     return crds
 
 
@@ -380,7 +398,7 @@ def score_root(det_chords, ann_chords):
         Similarity score for each chord.
 
     """
-    return (ann_chords['root'] == det_chords['root']).astype(np.float)
+    return (ann_chords['root'] == det_chords['root']).astype(float)
 
 
 def score_exact(det_chords, ann_chords):
@@ -404,7 +422,7 @@ def score_exact(det_chords, ann_chords):
     return ((ann_chords['root'] == det_chords['root']) &
             (ann_chords['bass'] == det_chords['bass']) &
             ((ann_chords['intervals'] == det_chords['intervals']).all(axis=1))
-            ).astype(np.float)
+            ).astype(float)
 
 
 def reduce_to_triads(chords, keep_bass=False):
@@ -732,11 +750,11 @@ class ChordEvaluation(EvaluationMixin):
 
     def __init__(self, detections, annotations, name=None, **kwargs):
         self.name = name or ''
-        self.ann_chords = load_chords(annotations)
-        self.det_chords = adjust(load_chords(detections), self.ann_chords)
+        self.ann_chords = merge_chords(encode(annotations))
+        self.det_chords = merge_chords(adjust(encode(detections),
+                                              self.ann_chords))
         self.annotations, self.detections, self.durations = evaluation_pairs(
             self.det_chords, self.ann_chords)
-
         self._underseg = None
         self._overseg = None
 
@@ -984,7 +1002,7 @@ def add_parser(parser):
     ''')
     # set defaults
     p.set_defaults(eval=ChordEvaluation, sum_eval=ChordSumEvaluation,
-                   mean_eval=ChordMeanEvaluation)
+                   mean_eval=ChordMeanEvaluation, load_fn=load_chords)
     # file I/O
     evaluation_io(p, ann_suffix='.chords', det_suffix='.chords.txt')
     # return the sub-parser and evaluation argument group

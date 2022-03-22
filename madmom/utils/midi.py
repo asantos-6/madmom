@@ -4,7 +4,8 @@
 # pylint: disable=too-many-arguments
 # pylint: disable=too-few-public-methods
 """
-This module contains MIDI functionality.
+This module contains MIDI functionality, but is deprecated as of version 0.16.
+Please use madmom.io.midi instead. This module will be removed in version 0.18.
 
 Almost all code is taken from Giles Hall's python-midi package:
 https://github.com/vishnubob/python-midi
@@ -50,11 +51,12 @@ SOFTWARE.
 
 from __future__ import absolute_import, division, print_function
 
-import sys
 import math
 import struct
-import numpy as np
+import sys
+import warnings
 
+import numpy as np
 
 # constants
 OCTAVE_MAX_VALUE = 12
@@ -111,6 +113,8 @@ TIME_SIGNATURE = (TIME_SIGNATURE_NUMERATOR, TIME_SIGNATURE_DENOMINATOR)
 SECONDS_PER_QUARTER_NOTE = 60. / TEMPO
 SECONDS_PER_TICK = SECONDS_PER_QUARTER_NOTE / RESOLUTION
 
+warnings.warn('Deprecated as of version 0.16. Please use madmom.io.midi '
+              'instead. This module will be removed in version 0.18.')
 
 # Ensure Python2/3 compatibility when reading bytes from MIDI files
 if sys.version_info[0] == 2:
@@ -379,6 +383,7 @@ class NoteOnEvent(NoteEvent):
     name = 'Note On'
     sort = .1  # make sure it is sorted before NoteOffEvent
 
+
 EventRegistry.register_event(NoteOnEvent)
 
 
@@ -390,6 +395,7 @@ class NoteOffEvent(NoteEvent):
     status_msg = 0x80
     name = 'Note Off'
     sort = .2  # make sure it is sorted after NoteOnEvent
+
 
 EventRegistry.register_event(NoteOffEvent)
 
@@ -450,6 +456,7 @@ class AfterTouchEvent(ChannelEvent):
         """
         self.data[1] = value
 
+
 EventRegistry.register_event(AfterTouchEvent)
 
 
@@ -509,6 +516,7 @@ class ControlChangeEvent(ChannelEvent):
         """
         self.data[1] = value
 
+
 EventRegistry.register_event(ControlChangeEvent)
 
 
@@ -545,6 +553,7 @@ class ProgramChangeEvent(ChannelEvent):
 
         """
         self.data[0] = value
+
 
 EventRegistry.register_event(ProgramChangeEvent)
 
@@ -583,6 +592,7 @@ class ChannelAfterTouchEvent(ChannelEvent):
         """
         self.data[0] = value
 
+
 EventRegistry.register_event(ChannelAfterTouchEvent)
 
 
@@ -618,6 +628,7 @@ class PitchWheelEvent(ChannelEvent):
         self.data[0] = value & 0x7F
         self.data[1] = (value >> 7) & 0x7F
 
+
 EventRegistry.register_event(PitchWheelEvent)
 
 
@@ -629,6 +640,7 @@ class SysExEvent(Event):
     status_msg = 0xF0
     length = 'variable'
     name = 'SysEx'
+
 
 EventRegistry.register_event(SysExEvent)
 
@@ -673,6 +685,7 @@ class SequenceNumberMetaEvent(MetaEvent):
     length = 2
     name = 'Sequence Number'
 
+
 EventRegistry.register_event(SequenceNumberMetaEvent)
 
 
@@ -684,6 +697,7 @@ class TextMetaEvent(MetaEventWithText):
     meta_command = 0x01
     length = 'variable'
     name = 'Text'
+
 
 EventRegistry.register_event(TextMetaEvent)
 
@@ -697,6 +711,7 @@ class CopyrightMetaEvent(MetaEventWithText):
     length = 'variable'
     name = 'Copyright Notice'
 
+
 EventRegistry.register_event(CopyrightMetaEvent)
 
 
@@ -708,6 +723,7 @@ class TrackNameEvent(MetaEventWithText):
     meta_command = 0x03
     length = 'variable'
     name = 'Track Name'
+
 
 EventRegistry.register_event(TrackNameEvent)
 
@@ -721,6 +737,7 @@ class InstrumentNameEvent(MetaEventWithText):
     length = 'variable'
     name = 'Instrument Name'
 
+
 EventRegistry.register_event(InstrumentNameEvent)
 
 
@@ -732,6 +749,7 @@ class LyricsEvent(MetaEventWithText):
     meta_command = 0x05
     length = 'variable'
     name = 'Lyrics'
+
 
 EventRegistry.register_event(LyricsEvent)
 
@@ -745,6 +763,7 @@ class MarkerEvent(MetaEventWithText):
     length = 'variable'
     name = 'Marker'
 
+
 EventRegistry.register_event(MarkerEvent)
 
 
@@ -757,6 +776,7 @@ class CuePointEvent(MetaEventWithText):
     length = 'variable'
     name = 'Cue Point'
 
+
 EventRegistry.register_event(CuePointEvent)
 
 
@@ -768,6 +788,7 @@ class ProgramNameEvent(MetaEventWithText):
     meta_command = 0x08
     length = 'variable'
     name = 'Program Name'
+
 
 EventRegistry.register_event(ProgramNameEvent)
 
@@ -790,6 +811,7 @@ class UnknownMetaEvent(MetaEvent):
         # TODO: is this needed, should be handled by Event already
         self.meta_command = kwargs['meta_command']
 
+
 EventRegistry.register_event(UnknownMetaEvent)
 
 
@@ -802,6 +824,7 @@ class ChannelPrefixEvent(MetaEvent):
     length = 1
     name = 'Channel Prefix'
 
+
 EventRegistry.register_event(ChannelPrefixEvent)
 
 
@@ -812,6 +835,7 @@ class PortEvent(MetaEvent):
     """
     meta_command = 0x21
     name = 'MIDI Port/Cable'
+
 
 EventRegistry.register_event(PortEvent)
 
@@ -824,6 +848,7 @@ class TrackLoopEvent(MetaEvent):
     meta_command = 0x2E
     name = 'Track Loop'
 
+
 EventRegistry.register_event(TrackLoopEvent)
 
 
@@ -835,6 +860,7 @@ class EndOfTrackEvent(MetaEvent):
     meta_command = 0x2F
     name = 'End of Track'
     sort = .99  # should always come last
+
 
 EventRegistry.register_event(EndOfTrackEvent)
 
@@ -876,6 +902,7 @@ class SetTempoEvent(MetaEvent):
         """
         self.data = [(microseconds >> (16 - (8 * x)) & 0xFF) for x in range(3)]
 
+
 EventRegistry.register_event(SetTempoEvent)
 
 
@@ -886,6 +913,7 @@ class SmpteOffsetEvent(MetaEvent):
     """
     meta_command = 0x54
     name = 'SMPTE Offset'
+
 
 EventRegistry.register_event(SmpteOffsetEvent)
 
@@ -982,6 +1010,7 @@ class TimeSignatureEvent(MetaEvent):
         """
         self.data[3] = thirty_seconds
 
+
 EventRegistry.register_event(TimeSignatureEvent)
 
 
@@ -1036,6 +1065,7 @@ class KeySignatureEvent(MetaEvent):
         """
         self.data[1] = val
 
+
 EventRegistry.register_event(KeySignatureEvent)
 
 
@@ -1046,6 +1076,7 @@ class SequencerSpecificEvent(MetaEvent):
     """
     meta_command = 0x7F
     name = 'Sequencer Specific'
+
 
 EventRegistry.register_event(SequencerSpecificEvent)
 
@@ -1407,38 +1438,38 @@ class MIDIFile(object):
     seconds):
 
     >>> m.notes()
-    array([[  0. ,  50. ,   1. ,  60. ,   0. ],
-           [  0.5,  62. ,   0.5,  90. ,   0. ]])
+    array([[ 0. , 50. ,  1. , 60. ,  0. ],
+           [ 0.5, 62. ,  0.5, 90. ,  0. ]])
     >>> m.notes(unit='ticks')
-    array([[   0.,   50.,  960.,   60.,    0.],
-           [ 480.,   62.,  480.,   90.,    0.]])
+    array([[  0.,  50., 960.,  60.,   0.],
+           [480.,  62., 480.,  90.,   0.]])
     >>> m.notes(unit='beats')
-    array([[  0.,  50.,   2.,  60.,   0.],
-           [  1.,  62.,   1.,  90.,   0.]])
+    array([[ 0., 50.,  2., 60.,  0.],
+           [ 1., 62.,  1., 90.,  0.]])
 
     >>> m = MIDIFile.from_notes(notes, tempo=60)
     >>> m.notes(unit='ticks')
-    array([[   0.,   50.,  480.,   60.,    0.],
-           [ 240.,   62.,  240.,   90.,    0.]])
+    array([[  0.,  50., 480.,  60.,   0.],
+           [240.,  62., 240.,  90.,   0.]])
     >>> m.notes(unit='beats')
-    array([[  0. ,  50. ,   1. ,  60. ,   0. ],
-           [  0.5,  62. ,   0.5,  90. ,   0. ]])
+    array([[ 0. , 50. ,  1. , 60. ,  0. ],
+           [ 0.5, 62. ,  0.5, 90. ,  0. ]])
 
     >>> m = MIDIFile.from_notes(notes, tempo=60, time_signature=(2, 2))
     >>> m.notes(unit='ticks')
-    array([[   0.,   50.,  960.,   60.,    0.],
-           [ 480.,   62.,  480.,   90.,    0.]])
+    array([[  0.,  50., 960.,  60.,   0.],
+           [480.,  62., 480.,  90.,   0.]])
     >>> m.notes(unit='beats')
-    array([[  0. ,  50. ,   1. ,  60. ,   0. ],
-           [  0.5,  62. ,   0.5,  90. ,   0. ]])
+    array([[ 0. , 50. ,  1. , 60. ,  0. ],
+           [ 0.5, 62. ,  0.5, 90. ,  0. ]])
 
     >>> m = MIDIFile.from_notes(notes, tempo=240, time_signature=(3, 8))
     >>> m.notes(unit='ticks')
-    array([[   0.,   50.,  960.,   60.,    0.],
-           [ 480.,   62.,  480.,   90.,    0.]])
+    array([[  0.,  50., 960.,  60.,   0.],
+           [480.,  62., 480.,  90.,   0.]])
     >>> m.notes(unit='beats')
-    array([[  0.,  50.,   4.,  60.,   0.],
-           [  2.,  62.,   2.,  90.,   0.]])
+    array([[ 0., 50.,  4., 60.,  0.],
+           [ 2., 62.,  2., 90.,  0.]])
 
     """
 
@@ -1513,7 +1544,7 @@ class MIDIFile(object):
                 cum_time = tempi[i - 1][2] + ticks * tempi[i - 1][1]
                 tempi[i] = (tempi[i][0], tempi[i][1], cum_time)
         # return tempo
-        return np.asarray(tempi, np.float)
+        return np.asarray(tempi, float)
 
     def time_signatures(self, suppress_warnings=False):
         """
@@ -1549,7 +1580,7 @@ class MIDIFile(object):
         if signatures[0][0] > 0:
             signatures.insert(0, (0, TIME_SIGNATURE))
         # return time signatures
-        return np.asarray(signatures, dtype=np.float)
+        return np.asarray(signatures, dtype=float)
 
     def notes(self, unit='s'):
         """
@@ -1613,7 +1644,7 @@ class MIDIFile(object):
                 tick = e.tick
 
         # sort the notes and convert to numpy array
-        notes = np.asarray(sorted(notes), dtype=np.float)
+        notes = np.asarray(sorted(notes), dtype=float)
 
         # convert onset times and durations from ticks to the requested unit
         # and return the notes
@@ -1906,6 +1937,5 @@ def process_notes(data, output=None):
     if output is None:
         # load the notes
         return MIDIFile.from_file(data).notes()
-    else:
-        MIDIFile.from_notes(data).write(output)
-        return data
+    MIDIFile.from_notes(data).write(output)
+    return data

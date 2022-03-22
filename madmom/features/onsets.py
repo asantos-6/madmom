@@ -11,11 +11,11 @@ from __future__ import absolute_import, division, print_function
 
 import numpy as np
 from scipy.ndimage import uniform_filter
-from scipy.ndimage.filters import maximum_filter
+from scipy.ndimage.filters import maximum_filter, minimum_filter
 
-from ..processors import (Processor, SequentialProcessor, ParallelProcessor,
-                          BufferProcessor)
 from ..audio.signal import smooth as smooth_signal
+from ..processors import (BufferProcessor, OnlineProcessor, ParallelProcessor,
+                          SequentialProcessor, )
 from ..utils import combine_events
 
 EPSILON = np.spacing(1)
@@ -279,7 +279,6 @@ def complex_flux(spectrogram, diff_frames=None, diff_max_bins=3,
 
     """
     # create a mask based on the local group delay information
-    from scipy.ndimage import maximum_filter, minimum_filter
     # take only absolute values of the local group delay and normalize them
     lgd = np.abs(spectrogram.stft.phase().lgd()) / np.pi
     # maximum filter along the temporal axis
@@ -752,7 +751,7 @@ class RNNOnsetProcessor(SequentialProcessor):
     >>> proc  # doctest: +ELLIPSIS
     <madmom.features.onsets.RNNOnsetProcessor object at 0x...>
     >>> proc('tests/data/audio/sample.wav') # doctest: +ELLIPSIS
-    array([ 0.08313,  0.0024 ,  ...,  0.00205,  0.00527], dtype=float32)
+    array([0.08313, 0.0024 , ... 0.00527], dtype=float32)
 
     """
 
@@ -833,7 +832,7 @@ class CNNOnsetProcessor(SequentialProcessor):
     >>> proc  # doctest: +ELLIPSIS
     <madmom.features.onsets.CNNOnsetProcessor object at 0x...>
     >>> proc('tests/data/audio/sample.wav')  # doctest: +ELLIPSIS
-    array([ 0.05369,  0.04205,  ...,  0.00024,  0.00014], dtype=float32)
+    array([0.05369, 0.04205, ... 0.00014], dtype=float32)
 
     """
 
@@ -965,60 +964,7 @@ def peak_picking(activations, threshold, smooth=None, pre_avg=0, post_avg=0,
         raise ValueError('`activations` must be either 1D or 2D')
 
 
-class PeakPickingProcessor(Processor):
-    """
-    Deprecated as of version 0.15. Will be removed in version 0.16. Use either
-    :class:`OnsetPeakPickingProcessor` or :class:`NotePeakPickingProcessor`
-    instead.
-
-    """
-
-    def __init__(self, **kwargs):
-        # pylint: disable=unused-argument
-        self.kwargs = kwargs
-
-    def process(self, activations, **kwargs):
-        """
-        Detect the peaks in the given activation function.
-
-        Parameters
-        ----------
-        activations : numpy array
-            Onset activation function.
-
-        Returns
-        -------
-        peaks : numpy array
-            Detected onsets [seconds[, frequency bin]].
-
-        """
-        import warnings
-        if activations.ndim == 1:
-            warnings.warn('`PeakPickingProcessor` is deprecated as of version '
-                          '0.15 and will be removed in version 0.16. Use '
-                          '`OnsetPeakPickingProcessor` instead.')
-            ppp = OnsetPeakPickingProcessor(**self.kwargs)
-            return ppp(activations, **kwargs)
-        elif activations.ndim == 2:
-            warnings.warn('`PeakPickingProcessor` is deprecated as of version '
-                          '0.15 and will be removed in version 0.16. Use '
-                          '`NotePeakPickingProcessor` instead.')
-            from .notes import NotePeakPickingProcessor
-            ppp = NotePeakPickingProcessor(**self.kwargs)
-            return ppp(activations, **kwargs)
-
-    @staticmethod
-    def add_arguments(parser, **kwargs):
-        """
-        Deprecated as of version 0.15. Will be removed in version 0.16. Use
-        either :class:`OnsetPeakPickingProcessor` or
-        :class:`NotePeakPickingProcessor` instead.
-
-        """
-        return OnsetPeakPickingProcessor.add_arguments(parser, **kwargs)
-
-
-class OnsetPeakPickingProcessor(Processor):
+class OnsetPeakPickingProcessor(OnlineProcessor):
     """
     This class implements the onset peak-picking functionality.
     It transparently converts the chosen values from seconds to frames.
@@ -1081,7 +1027,7 @@ class OnsetPeakPickingProcessor(Processor):
 
     >>> act = RNNOnsetProcessor()('tests/data/audio/sample.wav')
     >>> proc(act)  # doctest: +ELLIPSIS
-    array([ 0.09,  0.29,  0.45,  ...,  2.34,  2.49,  2.67])
+    array([0.09, 0.29, 0.45, ..., 2.34, 2.49, 2.67])
 
     """
     FPS = 100
@@ -1100,10 +1046,9 @@ class OnsetPeakPickingProcessor(Processor):
                  combine=COMBINE, delay=DELAY, online=ONLINE, fps=FPS,
                  **kwargs):
         # pylint: disable=unused-argument
-        # TODO: make this an IOProcessor by defining input/output processings
-        #       super(PeakPicking, self).__init__(peak_picking, write_events)
-        #       adjust some params for online mode?
-        if online:
+        # instantiate OnlineProcessor
+        super(OnsetPeakPickingProcessor, self).__init__(online=online)
+        if self.online:
             # set some parameters to 0 (i.e. no future information available)
             smooth = 0
             post_avg = 0
@@ -1121,7 +1066,6 @@ class OnsetPeakPickingProcessor(Processor):
         self.post_max = post_max
         self.combine = combine
         self.delay = delay
-        self.online = online
         self.fps = fps
 
     def reset(self):
@@ -1130,27 +1074,7 @@ class OnsetPeakPickingProcessor(Processor):
         self.counter = 0
         self.last_onset = None
 
-    def process(self, activations, **kwargs):
-        """
-        Detect the onsets in the given activation function.
-
-        Parameters
-        ----------
-        activations : numpy array
-            Onset activation function.
-
-        Returns
-        -------
-        onsets : numpy array
-            Detected onsets [seconds].
-
-        """
-        if self.online:
-            return self.process_online(activations, **kwargs)
-        else:
-            return self.process_sequence(activations, **kwargs)
-
-    def process_sequence(self, activations, **kwargs):
+    def process_offline(self, activations, **kwargs):
         """
         Detect the onsets in the given activation function.
 
@@ -1173,7 +1097,7 @@ class OnsetPeakPickingProcessor(Processor):
         # detect the peaks (function returns int indices)
         onsets = peak_picking(activations, self.threshold, *timings)
         # convert to timestamps
-        onsets = onsets.astype(np.float) / self.fps
+        onsets = onsets.astype(float) / self.fps
         # shift if necessary
         if self.delay:
             onsets += self.delay
@@ -1191,6 +1115,8 @@ class OnsetPeakPickingProcessor(Processor):
         ----------
         activations : numpy array
             Onset activation function.
+        reset : bool, optional
+            Reset the processor to its initial state before processing.
 
         Returns
         -------
@@ -1198,11 +1124,14 @@ class OnsetPeakPickingProcessor(Processor):
             Detected onsets [seconds].
 
         """
+        # cast as 1-dimensional array
+        # Note: in online mode, activations are just float values
+        activations = np.array(activations, copy=False, subok=True, ndmin=1)
         # buffer data
         if self.buffer is None or reset:
             # reset the processor
             self.reset()
-            # put 0s in front (depending on conext given by pre_max
+            # put 0s in front (depending on context given by pre_max
             init = np.zeros(int(np.round(self.pre_max * self.fps)))
             buffer = np.insert(activations, 0, init, axis=0)
             # offset the counter, because we buffer the activations
@@ -1244,6 +1173,8 @@ class OnsetPeakPickingProcessor(Processor):
                 onsets = np.empty(0)
         # return the onsets
         return onsets
+
+    process_sequence = process_offline
 
     @staticmethod
     def add_arguments(parser, threshold=THRESHOLD, smooth=None, pre_avg=None,
@@ -1300,8 +1231,9 @@ class OnsetPeakPickingProcessor(Processor):
                                 '[default=%(default).2f]')
         if post_avg is not None:
             g.add_argument('--post_avg', action='store', type=float,
-                           default=post_avg, help='build average over N '
-                           'following seconds [default=%(default).2f]')
+                           default=post_avg,
+                           help='build average over N following seconds '
+                                '[default=%(default).2f]')
         if pre_max is not None:
             g.add_argument('--pre_max', action='store', type=float,
                            default=pre_max,
