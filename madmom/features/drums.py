@@ -42,6 +42,53 @@ class PadProcessor:
       pad_stop = np.repeat(data[-1:], self.pad, axis=0)
       return np.concatenate((pad_start, data, pad_stop))
 
+class PadProcessor:
+
+    def __init__(self, pad):
+        self.pad = pad
+
+    def __call__(self, data):
+      """
+      Pad the data by repeating the first and last frame [pad] times.
+
+      Parameters
+      ----------
+      data: numpy array
+          Input data.
+
+      pad: int
+          Number of repetitions for first and last frame
+
+      Returns
+      -------
+      numpy array
+          Padded data.
+
+      """
+
+      pad_start = np.repeat(data[:1], self.pad, axis=0)
+      pad_stop = np.repeat(data[-1:], self.pad, axis=0)
+      return np.concatenate((pad_start, data, pad_stop))
+
+def _crnn_drum_processor_pad(data):
+    """
+    Pad the data by repeating the first and last frame 8 times.
+
+    Parameters
+    ----------
+    data: numpy array
+        Input data.
+
+    Returns
+    -------
+    numpy array
+        Padded data.
+
+    """
+    pad_start = np.repeat(data[:1], 4, axis=0)
+    pad_stop = np.repeat(data[-1:], 4, axis=0)
+    return np.concatenate((pad_start, data, pad_stop))
+
 
 def _crnn_drum_processor_stack(data):
     """
